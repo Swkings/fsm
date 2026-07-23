@@ -33,6 +33,7 @@ func main() {
 
 	blockStarted := make(chan struct{})
 	releaseBlock := make(chan struct{})
+	fireDone := make(chan struct{})
 	machine.SetTransitions(
 		fsm.NewTransitionItem("direct", "idle", "idle", fsm.Handler[payload]{Handler: func(machine *fsm.FSM[payload]) error {
 			close(blockStarted)
@@ -43,6 +44,10 @@ func main() {
 		fsm.NewTransitionItem("high", "idle", "idle", eventHandler("high")),
 		fsm.NewTransitionItem("low", "idle", "idle", eventHandler("low")),
 		fsm.NewTransitionItem("cancel", "idle", "idle", eventHandler("cancel")),
+		fsm.NewTransitionItem("fire", "idle", "idle", fsm.Handler[payload]{Handler: func(*fsm.FSM[payload]) error {
+			close(fireDone)
+			return nil
+		}}),
 	)
 
 	directDone := make(chan error, 1)
@@ -54,32 +59,44 @@ func main() {
 
 	waitContext, cancelWait := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelWait()
-	notify := make(chan fsm.AsyncEventResult, 1)
+	eventContext, cancelEvents := context.WithCancel(context.Background())
+	defer cancelEvents()
+	lowNotify := make(chan fsm.AsyncEventResult, 1)
+	highNotify := make(chan fsm.AsyncEventResult, 1)
 
-	lowReceipt := mustSubmit(machine, "low",
+	mustSubmit(machine, "low",
 		fsm.WithEventPriority(fsm.EventPriorityLow),
 		fsm.WithEventTTL(time.Second),
+		fsm.WithEventContext(eventContext),
+		fsm.WithEventNotify(lowNotify),
 	)
-	highReceipt := mustSubmit(machine, "high",
+	mustSubmit(machine, "high",
 		fsm.WithEventPriority(fsm.EventPriorityHigh),
-		fsm.WithEventNotify(notify),
+		fsm.WithEventContext(eventContext),
+		fsm.WithEventNotify(highNotify),
 	)
 	close(releaseBlock)
 	if err := <-directDone; err != nil {
 		panic(err)
 	}
 
-	highResult := mustWait(highReceipt, waitContext)
-	lowResult := mustWait(lowReceipt, waitContext)
-	notifiedResult := <-notify
-	fmt.Printf("order=%v high=%s low=%s notify=%s\n",
-		data.snapshot(), highResult.Status, lowResult.Status, notifiedResult.Status)
+	highResult := mustNotify(highNotify, waitContext)
+	lowResult := mustNotify(lowNotify, waitContext)
+	fmt.Printf("order=%v high=%s low=%s\n", data.snapshot(), highResult.Status, lowResult.Status)
 
-	eventContext, cancelEvent := context.WithCancel(context.Background())
+	cancelContext, cancelEvent := context.WithCancel(context.Background())
+	cancelNotify := make(chan fsm.AsyncEventResult, 1)
 	cancelEvent()
-	cancelReceipt := mustSubmit(machine, "cancel", fsm.WithEventContext(eventContext))
-	cancelResult := mustWait(cancelReceipt, waitContext)
+	mustSubmit(machine, "cancel",
+		fsm.WithEventContext(cancelContext),
+		fsm.WithEventNotify(cancelNotify),
+	)
+	cancelResult := mustNotify(cancelNotify, waitContext)
 	fmt.Printf("canceled event status=%s error=%v\n", cancelResult.Status, cancelResult.Error)
+
+	fireReceipt := mustSubmit(machine, "fire")
+	<-fireDone
+	fmt.Printf("fire-and-forget receipt=%v\n", fireReceipt)
 }
 
 func eventHandler(name string) fsm.Handler[payload] {
@@ -100,10 +117,11 @@ func mustSubmit(machine *fsm.FSM[payload], event fsm.FSMEvent, options ...fsm.As
 	return receipt
 }
 
-func mustWait(receipt *fsm.AsyncEventReceipt, ctx context.Context) fsm.AsyncEventResult {
-	result, err := receipt.Wait(ctx)
-	if err != nil {
-		panic(err)
+func mustNotify(notify <-chan fsm.AsyncEventResult, ctx context.Context) fsm.AsyncEventResult {
+	select {
+	case result := <-notify:
+		return result
+	case <-ctx.Done():
+		panic(ctx.Err())
 	}
-	return result
 }

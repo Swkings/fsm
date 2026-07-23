@@ -254,8 +254,8 @@ func (fsm *FSM[T]) GetCurrentState() FSMState {
 	return fsm.currentState
 }
 
-// GetEventContext 返回当前事件的 context，供 Handler 监听取消或过期信号。
-// 没有事件正在处理时返回 context.Background。
+// GetEventContext 返回当前事件的 context，供 Handler 监听提交方取消信号。
+// fire-and-forget 事件或没有事件正在处理时返回 context.Background；排队过期时间不会进入该 context。
 func (fsm *FSM[T]) GetEventContext() context.Context {
 	fsm.stateLock.RLock()
 	defer fsm.stateLock.RUnlock()

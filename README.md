@@ -48,7 +48,7 @@ FSMEnginePackage: github.com/swkings
 
 ## 异步事件队列
 
-`SubmitEvent` 会把事件放入状态机内部队列，并立即返回 `AsyncEventReceipt`。默认事件为高优先级、永不过期；同一优先级按提交顺序执行。调度优先级为：
+`SubmitEvent` 会把事件放入状态机内部队列。默认事件为高优先级、永不过期；同一优先级按提交顺序执行。调度优先级为：
 
 1. 尚未开始执行的直接 `ProcessEvent` 或 `ProcessEventContext` 调用。
 2. 高优先级异步事件。
@@ -56,14 +56,29 @@ FSMEnginePackage: github.com/swkings
 
 优先级只影响尚未开始的事件，已经进入 Handler 的事件不会被抢占。
 
+### Fire-and-forget
+
+不设置 `ctx` 和 `notify` 表示提交方不关心执行结果。FSM 不创建 context 监听和结果通知，`SubmitEvent` 返回的 receipt 为 `nil`：
+
+```go
+receipt, err := machine.SubmitEvent(
+    "open",
+    fsm.WithEventPriority(fsm.EventPriorityLow),
+    fsm.WithEventTTL(5*time.Second),
+)
+// receipt == nil
+```
+
+### 取消与状态通知
+
+`WithEventContext` 和 `WithEventNotify` 必须同时设置或同时省略。成对设置后，提交方可以调用 `cancel()` 取消排队中或正在执行的事件，FSM 会通过 `notify` 发送最终状态：
+
 ```go
 ctx, cancel := context.WithCancel(context.Background())
 notify := make(chan fsm.AsyncEventResult, 1)
 
 receipt, err := machine.SubmitEvent(
     "open",
-    fsm.WithEventPriority(fsm.EventPriorityLow),
-    fsm.WithEventTTL(5*time.Second), // 省略或传 0 表示永不过期
     fsm.WithEventContext(ctx),
     fsm.WithEventNotify(notify),
 )
@@ -71,16 +86,17 @@ if err != nil {
     return err
 }
 
-// 两种等待方式可以任选；receipt 的结果通知不会丢失。
-result, err := receipt.Wait(context.Background())
-// 或者：result := <-notify
+cancel() // 可选：向 FSM 发送取消信号
+result := <-notify
+_ = receipt // 成对设置时非 nil，也可以通过 receipt.Wait 等待
 _ = result
-_ = cancel
 ```
 
-也可以用 `WithEventExpiresAt` 设置绝对过期时间。事件完成、失败、取消或过期后，receipt 和可选通知通道会收到相同的 `AsyncEventResult`，其状态分别为 `succeeded`、`failed`、`canceled`、`expired`。通知通道由调用方持有，FSM 不会关闭它；建议使用容量至少为 1 的缓冲通道，并在收到通知前保持通道可用。
+通知状态包括 `succeeded`、`failed`、`canceled` 和 `expired`。通知通道由调用方持有，FSM 不会关闭它；建议使用容量至少为 1 的缓冲通道，并在收到通知前保持通道可用。
 
-异步取消是协作式的。Handler 可通过 `machine.GetEventContext()` 监听提交时的 context、过期时间或队列关闭信号；若 Handler 长时间阻塞且不监听 context，FSM 无法强制终止它，`Close` 也会等待它返回。应用退出时应从 Handler 外部调用 `Close`，用于取消剩余事件并等待队列 worker 结束。
+`WithEventTTL` 和 `WithEventExpiresAt` 独立控制事件的排队有效期。过期时若事件仍在队列中，会被立即移出；配置了 `ctx + notify` 时还会收到 `expired` 通知。事件一旦开始执行，过期时间不再取消 Handler。
+
+运行中事件的取消是协作式的，Handler 可通过 `machine.GetEventContext()` 监听提交方的 `ctx.Done()`；若 Handler 长时间阻塞且不监听 context，FSM 无法强制终止它。应用退出时应从 Handler 外部调用 `Close`，用于清理剩余事件并等待队列 worker 结束。
 
 ## 可视化
 

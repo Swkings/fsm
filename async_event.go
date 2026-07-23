@@ -30,7 +30,7 @@ const (
 	AsyncEventFailed AsyncEventStatus = "failed"
 	// AsyncEventCanceled 表示提交方 context 或状态机队列被取消。
 	AsyncEventCanceled AsyncEventStatus = "canceled"
-	// AsyncEventExpired 表示事件在开始前或处理期间超过了有效期。
+	// AsyncEventExpired 表示事件在队列中等待时超过了有效期。
 	AsyncEventExpired AsyncEventStatus = "expired"
 )
 
@@ -45,6 +45,8 @@ var (
 	ErrorNilEventContext = errors.New("async event context is nil")
 	// ErrorNilEventNotify 表示传入了 nil 事件通知通道。
 	ErrorNilEventNotify = errors.New("async event notify channel is nil")
+	// ErrorEventContextNotifyMismatch 表示 context 和通知通道没有同时设置。
+	ErrorEventContextNotifyMismatch = errors.New("async event context and notify must be set together")
 )
 
 // AsyncEventResult 是异步事件完成、失败、取消或过期后的最终结果。
@@ -66,7 +68,8 @@ type AsyncEventResult struct {
 	FinishedAt  time.Time
 }
 
-// AsyncEventReceipt 为提交方提供不会丢失的完成通知和结果查询能力。
+// AsyncEventReceipt 为关心执行结果的提交方提供完成通知和结果查询能力。
+// 只有同时设置 WithEventContext 和 WithEventNotify 时，SubmitEvent 才会返回非 nil receipt。
 type AsyncEventReceipt struct {
 	// ID 与最终 AsyncEventResult.ID 相同，可用于关联日志和外部任务。
 	ID string
@@ -121,14 +124,16 @@ func (receipt *AsyncEventReceipt) Wait(ctx context.Context) (AsyncEventResult, e
 	}
 }
 
-func (receipt *AsyncEventReceipt) complete(result AsyncEventResult) {
+func (receipt *AsyncEventReceipt) complete(result AsyncEventResult) (completed bool) {
 	receipt.once.Do(func() {
 		receipt.resultMu.Lock()
 		receipt.result = result
 		receipt.completed = true
 		receipt.resultMu.Unlock()
 		close(receipt.done)
+		completed = true
 	})
+	return completed
 }
 
 type asyncEventConfig struct {
@@ -139,7 +144,7 @@ type asyncEventConfig struct {
 	notify    chan<- AsyncEventResult
 }
 
-// AsyncEventOption 配置异步事件的优先级、过期时间、取消上下文和额外通知通道。
+// AsyncEventOption 配置异步事件的优先级、排队有效期、取消上下文和通知通道。
 type AsyncEventOption func(*asyncEventConfig) error
 
 // WithEventPriority 设置异步事件优先级。默认值为 EventPriorityHigh。
@@ -153,7 +158,8 @@ func WithEventPriority(priority EventPriority) AsyncEventOption {
 	}
 }
 
-// WithEventTTL 设置事件从提交时开始计算的存活时间。零值表示永不过期，负数无效。
+// WithEventTTL 设置事件从提交时开始计算的排队有效期。
+// 零值表示永不过期，负数无效；事件开始执行后不再受该有效期影响。
 func WithEventTTL(ttl time.Duration) AsyncEventOption {
 	return func(config *asyncEventConfig) error {
 		if ttl < 0 {
@@ -165,7 +171,8 @@ func WithEventTTL(ttl time.Duration) AsyncEventOption {
 	}
 }
 
-// WithEventExpiresAt 设置事件的绝对过期时间。零值表示永不过期。
+// WithEventExpiresAt 设置事件的绝对排队过期时间。零值表示永不过期。
+// 事件开始执行后即使到达该时间，也不会因过期被取消。
 func WithEventExpiresAt(expiresAt time.Time) AsyncEventOption {
 	return func(config *asyncEventConfig) error {
 		config.expiresAt = expiresAt
@@ -174,7 +181,8 @@ func WithEventExpiresAt(expiresAt time.Time) AsyncEventOption {
 	}
 }
 
-// WithEventContext 设置事件取消上下文。context 取消会取消排队中或处理中事件。
+// WithEventContext 设置提交方用于取消事件的 context。
+// 该选项必须和 WithEventNotify 同时设置；Handler 可通过 GetEventContext 监听取消信号。
 func WithEventContext(ctx context.Context) AsyncEventOption {
 	return func(config *asyncEventConfig) error {
 		if ctx == nil {
@@ -185,9 +193,9 @@ func WithEventContext(ctx context.Context) AsyncEventOption {
 	}
 }
 
-// WithEventNotify 设置额外结果通知通道。
-// 队列不会关闭调用方拥有的通道；通知发送在独立 goroutine 中执行，不阻塞后续事件。
-// 调用方应持续接收该通道，推荐使用至少容量为 1 的缓冲通道，并且不要在收到结果前关闭通道。
+// WithEventNotify 设置 FSM 向提交方发送最终事件状态的通知通道。
+// 该选项必须和 WithEventContext 同时设置。FSM 不会关闭调用方拥有的通道；
+// 通知发送在独立 goroutine 中执行，推荐使用至少容量为 1 的缓冲通道。
 func WithEventNotify(notify chan<- AsyncEventResult) AsyncEventOption {
 	return func(config *asyncEventConfig) error {
 		if notify == nil {
@@ -233,9 +241,10 @@ func newEventQueue() *eventQueue {
 }
 
 // SubmitEvent 将事件提交到异步优先级队列。
-// 默认使用高优先级、context.Background，且永不过期。
+// 默认使用高优先级且永不过期。ctx 和 notify 必须同时设置或同时省略：
+// 同时省略时采用 fire-and-forget 模式并返回 nil receipt；同时设置时可取消事件并接收最终状态。
 func (fsm *FSM[T]) SubmitEvent(event FSMEvent, options ...AsyncEventOption) (*AsyncEventReceipt, error) {
-	config := asyncEventConfig{priority: EventPriorityHigh, ctx: context.Background()}
+	config := asyncEventConfig{priority: EventPriorityHigh}
 	for _, option := range options {
 		if option == nil {
 			continue
@@ -244,17 +253,25 @@ func (fsm *FSM[T]) SubmitEvent(event FSMEvent, options ...AsyncEventOption) (*As
 			return nil, err
 		}
 	}
+	if (config.ctx == nil) != (config.notify == nil) {
+		return nil, ErrorEventContextNotifyMismatch
+	}
 
 	submittedAt := time.Now()
-	id := uuid.NewString()
+	id := ""
+	if config.ctx != nil {
+		id = uuid.NewString()
+	}
 	item := &queuedEvent{
 		id:          id,
 		event:       event,
 		priority:    config.priority,
 		ctx:         config.ctx,
 		notify:      config.notify,
-		receipt:     newAsyncEventReceipt(id),
 		submittedAt: submittedAt,
+	}
+	if config.ctx != nil {
+		item.receipt = newAsyncEventReceipt(id)
 	}
 	if !config.expiresAt.IsZero() {
 		item.expiresAt = config.expiresAt
@@ -262,23 +279,29 @@ func (fsm *FSM[T]) SubmitEvent(event FSMEvent, options ...AsyncEventOption) (*As
 		item.expiresAt = submittedAt.Add(config.ttl)
 	}
 
-	if !item.expiresAt.IsZero() {
-		item.expiryTimer = time.AfterFunc(time.Until(item.expiresAt), fsm.eventQueue.signal)
-	}
-	if err := fsm.eventQueue.enqueue(item); err != nil {
-		if item.expiryTimer != nil {
-			item.expiryTimer.Stop()
+	if err := fsm.eventQueue.enqueue(item, func() {
+		if fsm.eventQueue.remove(item) {
+			fsm.rejectQueuedEvent(item, AsyncEventExpired, context.DeadlineExceeded)
+			return
 		}
+		fsm.eventQueue.signal()
+	}); err != nil {
 		return nil, err
 	}
 	fsm.eventQueue.startOnce.Do(func() { go fsm.runEventQueue() })
-	go func() {
-		select {
-		case <-item.ctx.Done():
-			fsm.eventQueue.signal()
-		case <-item.receipt.Done():
-		}
-	}()
+	if item.ctx != nil {
+		go func() {
+			select {
+			case <-item.ctx.Done():
+				if fsm.eventQueue.remove(item) {
+					fsm.rejectQueuedEvent(item, AsyncEventCanceled, item.ctx.Err())
+					return
+				}
+				fsm.eventQueue.signal()
+			case <-item.receipt.Done():
+			}
+		}()
+	}
 	fsm.eventQueue.signal()
 	return item.receipt, nil
 }
@@ -290,14 +313,15 @@ func (fsm *FSM[T]) PendingEventCount() (high int, low int) {
 	return len(fsm.eventQueue.high), len(fsm.eventQueue.low)
 }
 
-// Close 取消队列中和正在执行的异步事件，并等待后台 worker 退出。
+// Close 取消队列中和正在执行的可通知事件，并等待后台 worker 退出。
+// fire-and-forget 事件没有提交方 context，已开始执行后会自然运行到 Handler 返回。
 // Close 不影响之后直接调用 ProcessEvent，但关闭后不能再次 SubmitEvent。
 // 不要从异步事件自己的 Handler 内调用 Close，否则会等待当前 Handler 自身退出。
 func (fsm *FSM[T]) Close() error {
 	pending, alreadyClosed := fsm.eventQueue.close()
 	if !alreadyClosed {
 		for _, item := range pending {
-			fsm.completeQueuedEvent(item, AsyncEventCanceled, fsm.rejectedEventTrace(item.event, ErrorEventQueueClosed), ErrorEventQueueClosed, time.Time{})
+			fsm.rejectQueuedEvent(item, AsyncEventCanceled, ErrorEventQueueClosed)
 		}
 		fsm.eventQueue.startOnce.Do(func() { go fsm.runEventQueue() })
 		fsm.eventQueue.signal()
@@ -306,7 +330,8 @@ func (fsm *FSM[T]) Close() error {
 	return nil
 }
 
-func (queue *eventQueue) enqueue(item *queuedEvent) error {
+// enqueue 在持锁期间入队并安装过期计时器，避免过期回调早于入队执行。
+func (queue *eventQueue) enqueue(item *queuedEvent, onExpire func()) error {
 	queue.mu.Lock()
 	defer queue.mu.Unlock()
 	if queue.closed {
@@ -316,6 +341,9 @@ func (queue *eventQueue) enqueue(item *queuedEvent) error {
 		queue.high = append(queue.high, item)
 	} else {
 		queue.low = append(queue.low, item)
+	}
+	if !item.expiresAt.IsZero() {
+		item.expiryTimer = time.AfterFunc(time.Until(item.expiresAt), onExpire)
 	}
 	return nil
 }
@@ -336,6 +364,31 @@ func (queue *eventQueue) dequeue() *queuedEvent {
 		return item
 	}
 	return nil
+}
+
+// remove 仅移除仍位于队列切片中的事件；已经被 worker 取出的事件不受排队过期逻辑影响。
+func (queue *eventQueue) remove(target *queuedEvent) bool {
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
+	var removed bool
+	queue.high, removed = removeQueuedEvent(queue.high, target)
+	if removed {
+		return true
+	}
+	queue.low, removed = removeQueuedEvent(queue.low, target)
+	return removed
+}
+
+func removeQueuedEvent(items []*queuedEvent, target *queuedEvent) ([]*queuedEvent, bool) {
+	for index, item := range items {
+		if item != target {
+			continue
+		}
+		copy(items[index:], items[index+1:])
+		items[len(items)-1] = nil
+		return items[:len(items)-1], true
+	}
+	return items, false
 }
 
 func (queue *eventQueue) requeueFront(item *queuedEvent) bool {
@@ -401,28 +454,28 @@ func (fsm *FSM[T]) runEventQueue() {
 		}
 
 		if status, err, canceled := queuedEventCancellation(item); canceled {
-			trace := fsm.rejectedEventTrace(item.event, err)
-			fsm.completeQueuedEvent(item, status, trace, err, time.Time{})
+			fsm.rejectQueuedEvent(item, status, err)
 			continue
 		}
 		if item.priority == EventPriorityLow && fsm.eventQueue.hasHighPriorityEvent() {
 			if !fsm.eventQueue.requeueFront(item) {
-				fsm.completeQueuedEvent(item, AsyncEventCanceled, fsm.rejectedEventTrace(item.event, ErrorEventQueueClosed), ErrorEventQueueClosed, time.Time{})
+				fsm.rejectQueuedEvent(item, AsyncEventCanceled, ErrorEventQueueClosed)
 				continue
 			}
 			continue
 		}
 		if !fsm.tryAcquireQueuedEvent() {
 			if !fsm.eventQueue.requeueFront(item) {
-				fsm.completeQueuedEvent(item, AsyncEventCanceled, fsm.rejectedEventTrace(item.event, ErrorEventQueueClosed), ErrorEventQueueClosed, time.Time{})
+				fsm.rejectQueuedEvent(item, AsyncEventCanceled, ErrorEventQueueClosed)
 				continue
 			}
 			fsm.waitForQueueSchedule()
 			continue
 		}
 
+		stopEventExpiryTimer(item)
 		startedAt := time.Now()
-		executionContext, cancel := eventExecutionContext(item.ctx, fsm.eventQueue.ctx, item.expiresAt)
+		executionContext, cancel := eventExecutionContext(item.ctx, fsm.eventQueue.ctx)
 		trace, err := fsm.processEventLocked(executionContext, item.event)
 		cancel()
 		fsm.releaseEventExecution()
@@ -430,9 +483,7 @@ func (fsm *FSM[T]) runEventQueue() {
 		status := AsyncEventSucceeded
 		if err != nil {
 			status = AsyncEventFailed
-			if !item.expiresAt.IsZero() && !time.Now().Before(item.expiresAt) {
-				status = AsyncEventExpired
-			} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if item.ctx != nil && (item.ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 				status = AsyncEventCanceled
 			}
 		}
@@ -460,6 +511,9 @@ func queuedEventCancellation(item *queuedEvent) (AsyncEventStatus, error, bool) 
 	if !item.expiresAt.IsZero() && !time.Now().Before(item.expiresAt) {
 		return AsyncEventExpired, context.DeadlineExceeded, true
 	}
+	if item.ctx == nil {
+		return "", nil, false
+	}
 	select {
 	case <-item.ctx.Done():
 		return AsyncEventCanceled, item.ctx.Err(), true
@@ -468,17 +522,12 @@ func queuedEventCancellation(item *queuedEvent) (AsyncEventStatus, error, bool) 
 	}
 }
 
-func eventExecutionContext(parent context.Context, queueContext context.Context, expiresAt time.Time) (context.Context, context.CancelFunc) {
+// eventExecutionContext 只合并提交方取消信号和队列关闭信号，不包含事件排队过期时间。
+func eventExecutionContext(parent context.Context, queueContext context.Context) (context.Context, context.CancelFunc) {
 	if parent == nil {
-		parent = context.Background()
+		return context.Background(), func() {}
 	}
-	var ctx context.Context
-	var cancel context.CancelFunc
-	if expiresAt.IsZero() {
-		ctx, cancel = context.WithCancel(parent)
-	} else {
-		ctx, cancel = context.WithDeadline(parent, expiresAt)
-	}
+	ctx, cancel := context.WithCancel(parent)
 	stopQueueCancel := context.AfterFunc(queueContext, cancel)
 	if queueContext.Err() != nil {
 		cancel()
@@ -489,6 +538,21 @@ func eventExecutionContext(parent context.Context, queueContext context.Context,
 	}
 }
 
+func stopEventExpiryTimer(item *queuedEvent) {
+	if item.expiryTimer != nil {
+		item.expiryTimer.Stop()
+	}
+}
+
+// rejectQueuedEvent 只为设置了 ctx 和 notify 的事件构建结果；fire-and-forget 事件直接结束。
+func (fsm *FSM[T]) rejectQueuedEvent(item *queuedEvent, status AsyncEventStatus, err error) {
+	stopEventExpiryTimer(item)
+	if item.receipt == nil {
+		return
+	}
+	fsm.completeQueuedEvent(item, status, fsm.rejectedEventTrace(item.event, err), err, time.Time{})
+}
+
 func (fsm *FSM[T]) rejectedEventTrace(event FSMEvent, err error) TransitionTrace {
 	state, previousID := fsm.stateSnapshot()
 	trace := NewTransitionTrace(previousID, uuid.NewString(), state, event).Start()
@@ -497,8 +561,9 @@ func (fsm *FSM[T]) rejectedEventTrace(event FSMEvent, err error) TransitionTrace
 }
 
 func (fsm *FSM[T]) completeQueuedEvent(item *queuedEvent, status AsyncEventStatus, trace TransitionTrace, err error, startedAt time.Time) {
-	if item.expiryTimer != nil {
-		item.expiryTimer.Stop()
+	stopEventExpiryTimer(item)
+	if item.receipt == nil {
+		return
 	}
 	result := AsyncEventResult{
 		ID:          item.id,
@@ -511,11 +576,11 @@ func (fsm *FSM[T]) completeQueuedEvent(item *queuedEvent, status AsyncEventStatu
 		StartedAt:   startedAt,
 		FinishedAt:  time.Now(),
 	}
-	item.receipt.complete(result)
-	if item.notify != nil {
-		go func() {
-			defer func() { _ = recover() }()
-			item.notify <- result
-		}()
+	if !item.receipt.complete(result) {
+		return
 	}
+	go func() {
+		defer func() { _ = recover() }()
+		item.notify <- result
+	}()
 }

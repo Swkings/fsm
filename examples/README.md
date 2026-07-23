@@ -12,7 +12,11 @@ go run ./examples/basic
 
 ## 异步事件队列
 
-演示直接事件、高低优先级异步事件、TTL、receipt、通知 channel 和 context 取消：
+演示以下语义：
+
+- 直接事件、高低优先级异步事件及 TTL。
+- `ctx` 与 `notify` 成对设置后的取消和状态通知。
+- 不设置 `ctx`、`notify` 时的 fire-and-forget 提交，receipt 为 `nil`。
 
 ```bash
 go run ./examples/async
