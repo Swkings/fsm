@@ -1,9 +1,11 @@
 package fsm
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 )
@@ -117,8 +119,10 @@ type (
 		fromState FSMState
 		// fromEvent 记录最近一次成功迁移使用的事件。
 		fromEvent FSMEvent
-		// processingEvent 记录当前正在处理的事件；成功迁移后恢复为空事件。
+		// processingEvent 记录当前正在处理的事件；完成后恢复为空事件。
 		processingEvent FSMEvent
+		// processingContext 向 Handler 暴露同步或异步事件的取消信号。
+		processingContext context.Context
 		// currentState 是状态机当前已提交的状态。
 		currentState FSMState
 		// transitions 保存“事件+源状态”到目标状态的映射。
@@ -133,6 +137,12 @@ type (
 		stateLock sync.RWMutex
 		// eventLock 保证同一个状态机实例同一时间只处理一个事件。
 		eventLock sync.Mutex
+		// eventScheduleLock 原子协调直接调用和异步队列对事件执行权的竞争。
+		eventScheduleLock sync.Mutex
+		// directEventPending 让异步 worker 为已经到达的直接 ProcessEvent 调用让行。
+		directEventPending atomic.Int64
+		// eventQueue 保存并调度异步提交的高、低优先级事件。
+		eventQueue *eventQueue
 		// configLock 统一保护 transitions、handlers 和 eventSearch，确保迁移配置一致。
 		configLock sync.RWMutex
 	}
@@ -142,15 +152,17 @@ type (
 // payloads 是可选参数；传入多个值时只使用第一个，未传入时 Payload 为 nil。
 func NewFSM[T any](fsmName FSMName, initState FSMState, payloads ...*T) *FSM[T] {
 	fsm := &FSM[T]{
-		TtId:            uuid.NewString(),
-		Name:            fsmName,
-		fromState:       StateEmpty,
-		fromEvent:       EventEmpty,
-		currentState:    initState,
-		processingEvent: EventEmpty,
-		transitions:     make(map[EventStateKey]FSMState),
-		handlers:        make(map[EventStateKey]Handler[T]),
-		eventSearch:     make(map[FSMState][]FSMEvent),
+		TtId:              uuid.NewString(),
+		Name:              fsmName,
+		fromState:         StateEmpty,
+		fromEvent:         EventEmpty,
+		currentState:      initState,
+		processingEvent:   EventEmpty,
+		processingContext: context.Background(),
+		transitions:       make(map[EventStateKey]FSMState),
+		handlers:          make(map[EventStateKey]Handler[T]),
+		eventSearch:       make(map[FSMState][]FSMEvent),
+		eventQueue:        newEventQueue(),
 		Payload: func() *T {
 			if len(payloads) > 0 {
 				return payloads[0]
@@ -242,6 +254,17 @@ func (fsm *FSM[T]) GetCurrentState() FSMState {
 	return fsm.currentState
 }
 
+// GetEventContext 返回当前事件的 context，供 Handler 监听取消或过期信号。
+// 没有事件正在处理时返回 context.Background。
+func (fsm *FSM[T]) GetEventContext() context.Context {
+	fsm.stateLock.RLock()
+	defer fsm.stateLock.RUnlock()
+	if fsm.processingContext == nil {
+		return context.Background()
+	}
+	return fsm.processingContext
+}
+
 // getTransition 返回迁移规则的目标状态、Handler 及存在标记。
 func (fsm *FSM[T]) getTransition(eventStateKey EventStateKey) (FSMState, Handler[T], bool) {
 	fsm.configLock.RLock()
@@ -275,16 +298,40 @@ func (fsm *FSM[T]) visualizationSnapshot() (map[EventStateKey]FSMState, FSMState
 //
 // 规则不存在或 Handler 返回错误时会返回失败追踪，当前状态及追踪标识保持不变。
 func (fsm *FSM[T]) ProcessEvent(event FSMEvent) (TransitionTrace, error) {
-	if !fsm.eventLock.TryLock() {
-		fromState, prevTtID := fsm.stateSnapshot()
-		err := ErrorEventProcessing
-		trace := NewTransitionTrace(prevTtID, uuid.NewString(), fromState, event).Start()
-		trace.SetFinalState(fromState).TransitionFail().End(err)
-		return trace.TrimPtr(), err
-	}
-	defer fsm.eventLock.Unlock()
+	return fsm.ProcessEventContext(context.Background(), event)
+}
 
-	fromState, prevTtID := fsm.beginProcessingEvent(event)
+// ProcessEventContext 直接处理事件，并允许 context 在 Handler 阶段之间取消迁移。
+// 直接调用拥有最高调度优先级；若另一个事件已经开始执行，则立即返回 ErrorEventProcessing。
+func (fsm *FSM[T]) ProcessEventContext(ctx context.Context, event FSMEvent) (TransitionTrace, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return fsm.rejectedEventTrace(event, err), err
+	}
+
+	fsm.directEventPending.Add(1)
+	fsm.eventScheduleLock.Lock()
+	acquired := fsm.eventLock.TryLock()
+	fsm.eventScheduleLock.Unlock()
+	fsm.directEventPending.Add(-1)
+	if !acquired {
+		err := ErrorEventProcessing
+		return fsm.rejectedEventTrace(event, err), err
+	}
+	defer fsm.releaseEventExecution()
+
+	return fsm.processEventLocked(ctx, event)
+}
+
+// processEventLocked 在调用方已经取得事件执行权后完成迁移。
+func (fsm *FSM[T]) processEventLocked(ctx context.Context, event FSMEvent) (TransitionTrace, error) {
+	if err := ctx.Err(); err != nil {
+		return fsm.rejectedEventTrace(event, err), err
+	}
+
+	fromState, prevTtID := fsm.beginProcessingEvent(ctx, event)
 	defer fsm.clearProcessingEvent()
 
 	nextTtID := uuid.NewString()
@@ -294,12 +341,16 @@ func (fsm *FSM[T]) ProcessEvent(event FSMEvent) (TransitionTrace, error) {
 	toState, handler, exists := fsm.getTransition(eventStateKey)
 	if !exists {
 		err := ErrorEventStateKeyInvalid(eventStateKey)
-		trace.SetFinalState(fromState).TransitionFail().End(err)
+		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail().End(err)
 		return trace.TrimPtr(), err
 	}
 	trace.SetToState(toState)
 
-	if err := handler.apply(fsm); err != nil {
+	if err := handler.apply(ctx, fsm); err != nil {
+		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail().End(err)
+		return trace.TrimPtr(), err
+	}
+	if err := ctx.Err(); err != nil {
 		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail().End(err)
 		return trace.TrimPtr(), err
 	}
@@ -314,6 +365,14 @@ func (fsm *FSM[T]) ProcessEvent(event FSMEvent) (TransitionTrace, error) {
 	return trace.TrimPtr(), nil
 }
 
+// releaseEventExecution 释放执行权并唤醒等待调度的异步队列。
+func (fsm *FSM[T]) releaseEventExecution() {
+	fsm.eventLock.Unlock()
+	if fsm.eventQueue != nil {
+		fsm.eventQueue.signal()
+	}
+}
+
 // stateSnapshot 返回当前状态和最近一次成功迁移标识的一致快照。
 func (fsm *FSM[T]) stateSnapshot() (FSMState, string) {
 	fsm.stateLock.RLock()
@@ -323,11 +382,12 @@ func (fsm *FSM[T]) stateSnapshot() (FSMState, string) {
 }
 
 // beginProcessingEvent 记录正在处理的事件，并返回迁移开始前的状态快照。
-func (fsm *FSM[T]) beginProcessingEvent(event FSMEvent) (FSMState, string) {
+func (fsm *FSM[T]) beginProcessingEvent(ctx context.Context, event FSMEvent) (FSMState, string) {
 	fsm.stateLock.Lock()
 	defer fsm.stateLock.Unlock()
 
 	fsm.processingEvent = event
+	fsm.processingContext = ctx
 	return fsm.currentState, fsm.TtId
 }
 
@@ -337,6 +397,7 @@ func (fsm *FSM[T]) clearProcessingEvent() {
 	defer fsm.stateLock.Unlock()
 
 	fsm.processingEvent = EventEmpty
+	fsm.processingContext = context.Background()
 }
 
 // commitTransition 仅在状态未被外部修改时提交迁移结果。
@@ -364,28 +425,18 @@ func (fsm *FSM[T]) commitTransition(
 
 // apply 按固定顺序执行 Handler 的三个阶段。
 // 任一阶段返回错误都会立即终止处理并向上传递，目标状态不会提交。
-func (h Handler[T]) apply(
-	fsm *FSM[T],
-) error {
-	if h.BeforeHandler != nil {
-		err := h.BeforeHandler(fsm)
-		if err != nil {
+func (h Handler[T]) apply(ctx context.Context, fsm *FSM[T]) error {
+	stages := []Actor[T]{h.BeforeHandler, h.Handler, h.AfterHandler}
+	for _, stage := range stages {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if stage == nil {
+			continue
+		}
+		if err := stage(fsm); err != nil {
 			return err
 		}
 	}
-
-	if h.Handler != nil {
-		err := h.Handler(fsm)
-		if err != nil {
-			return err
-		}
-	}
-
-	if h.AfterHandler != nil {
-		if err := h.AfterHandler(fsm); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return ctx.Err()
 }

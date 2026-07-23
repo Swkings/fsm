@@ -37,6 +37,42 @@ FSMEnginePackage: github.com/swkings
 
 同一 FSM 不允许重入处理事件：Handler 内再次调用 `ProcessEvent`，或其他 goroutine 在事件尚未结束时调用，会立即得到 `ErrorEventProcessing`，不会阻塞死锁。Handler 执行期间若通过 `SetCurrentState` 改变状态，原迁移会返回 `ErrorStateChanged`，避免覆盖外部状态修改。
 
+## 异步事件队列
+
+`SubmitEvent` 会把事件放入状态机内部队列，并立即返回 `AsyncEventReceipt`。默认事件为高优先级、永不过期；同一优先级按提交顺序执行。调度优先级为：
+
+1. 尚未开始执行的直接 `ProcessEvent` 或 `ProcessEventContext` 调用。
+2. 高优先级异步事件。
+3. 低优先级异步事件。
+
+优先级只影响尚未开始的事件，已经进入 Handler 的事件不会被抢占。
+
+```go
+ctx, cancel := context.WithCancel(context.Background())
+notify := make(chan fsm.AsyncEventResult, 1)
+
+receipt, err := machine.SubmitEvent(
+    "open",
+    fsm.WithEventPriority(fsm.EventPriorityLow),
+    fsm.WithEventTTL(5*time.Second), // 省略或传 0 表示永不过期
+    fsm.WithEventContext(ctx),
+    fsm.WithEventNotify(notify),
+)
+if err != nil {
+    return err
+}
+
+// 两种等待方式可以任选；receipt 的结果通知不会丢失。
+result, err := receipt.Wait(context.Background())
+// 或者：result := <-notify
+_ = result
+_ = cancel
+```
+
+也可以用 `WithEventExpiresAt` 设置绝对过期时间。事件完成、失败、取消或过期后，receipt 和可选通知通道会收到相同的 `AsyncEventResult`，其状态分别为 `succeeded`、`failed`、`canceled`、`expired`。通知通道由调用方持有，FSM 不会关闭它；建议使用容量至少为 1 的缓冲通道，并在收到通知前保持通道可用。
+
+异步取消是协作式的。Handler 可通过 `machine.GetEventContext()` 监听提交时的 context、过期时间或队列关闭信号；若 Handler 长时间阻塞且不监听 context，FSM 无法强制终止它，`Close` 也会等待它返回。应用退出时应从 Handler 外部调用 `Close`，用于取消剩余事件并等待队列 worker 结束。
+
 ## 可视化
 
 - `DotString` 输出经过转义的 Graphviz DOT 文本。
