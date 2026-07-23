@@ -2,6 +2,15 @@
 
 这是一个支持泛型 Payload、三阶段 Handler、迁移追踪以及 Graphviz/Mermaid 可视化的有限状态机库。
 
+## 可运行示例
+
+```bash
+go run ./examples/basic
+go run ./examples/async
+```
+
+完整说明见 [`examples`](./examples/README.md)。
+
 ## 使用模板生成代码
 
 ```bash
