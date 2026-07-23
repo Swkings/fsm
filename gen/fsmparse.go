@@ -1,7 +1,10 @@
 package gen
 
 import (
+	"fmt"
+	"go/token"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/zeromicro/go-zero/core/conf"
@@ -16,9 +19,6 @@ const (
 	eventPrefix = "Event"
 	statePrefix = "State"
 )
-
-var EventMap = map[string]string{}
-var StateMap = map[string]string{}
 
 type FSMMetaInfo struct {
 	Name       string
@@ -41,12 +41,14 @@ type Transition struct {
 	To    string
 	Event string
 }
+
 type FSM struct {
 	Name        string
 	Describe    string
 	Initial     string
 	Transitions []Transition
 }
+
 type FSMData struct {
 	PackageDir       string
 	Package          string
@@ -56,104 +58,164 @@ type FSMData struct {
 	FSMs             []FSM
 }
 
-func ParseFSMData(fsmYaml FSMYaml) FSMData {
-	fsms := []FSM{}
-	for _, fsmsMetaInfo := range fsmYaml.FSMs {
-		transitions := []Transition{}
-		for _, transition := range fsmsMetaInfo.Transition {
-			itemList := strings.Split(transition, "->")
+func ParseFSMData(fsmYaml FSMYaml) (FSMData, error) {
+	packageDir := strings.TrimSpace(strings.TrimSuffix(fsmYaml.PackageDir, "/"))
+	enginePackage := strings.TrimSpace(strings.TrimSuffix(fsmYaml.FSMEnginePackage, "/"))
+	packageName := strings.TrimSpace(fsmYaml.Package)
+	if packageDir == "" {
+		return FSMData{}, fmt.Errorf("PackageDir is required")
+	}
+	if enginePackage == "" {
+		return FSMData{}, fmt.Errorf("FSMEnginePackage is required")
+	}
+	if !token.IsIdentifier(packageName) || token.Lookup(packageName).IsKeyword() {
+		return FSMData{}, fmt.Errorf("invalid Package %q", fsmYaml.Package)
+	}
+
+	states, stateSet, err := prefixedIdentifiers(fsmYaml.State, statePrefix, "state")
+	if err != nil {
+		return FSMData{}, err
+	}
+	events, eventSet, err := prefixedIdentifiers(fsmYaml.Event, eventPrefix, "event")
+	if err != nil {
+		return FSMData{}, err
+	}
+
+	fsms := make([]FSM, 0, len(fsmYaml.FSMs))
+	fsmNames := make(map[string]struct{}, len(fsmYaml.FSMs))
+	for _, meta := range fsmYaml.FSMs {
+		name := strings.TrimSpace(meta.Name)
+		if !token.IsIdentifier(name) || token.Lookup(name).IsKeyword() {
+			return FSMData{}, fmt.Errorf("invalid FSM name %q", meta.Name)
+		}
+		if _, exists := fsmNames[name]; exists {
+			return FSMData{}, fmt.Errorf("duplicate FSM name %q", name)
+		}
+		fsmNames[name] = struct{}{}
+
+		initialName := strings.TrimSpace(meta.Initial)
+		if _, exists := stateSet[initialName]; !exists {
+			return FSMData{}, fmt.Errorf("FSM %q uses unknown initial state %q", name, initialName)
+		}
+
+		transitions := make([]Transition, 0, len(meta.Transition))
+		transitionKeys := make(map[string]struct{}, len(meta.Transition))
+		for index, expression := range meta.Transition {
+			parts := strings.Split(expression, "->")
+			if len(parts) != 3 {
+				return FSMData{}, fmt.Errorf("FSM %q transition %d must use From -> Event -> To format: %q", name, index+1, expression)
+			}
+			from := strings.TrimSpace(parts[0])
+			event := strings.TrimSpace(parts[1])
+			to := strings.TrimSpace(parts[2])
+			if _, exists := stateSet[from]; !exists {
+				return FSMData{}, fmt.Errorf("FSM %q transition %d uses unknown source state %q", name, index+1, from)
+			}
+			if _, exists := eventSet[event]; !exists {
+				return FSMData{}, fmt.Errorf("FSM %q transition %d uses unknown event %q", name, index+1, event)
+			}
+			if _, exists := stateSet[to]; !exists {
+				return FSMData{}, fmt.Errorf("FSM %q transition %d uses unknown target state %q", name, index+1, to)
+			}
+
+			key := from + "\x00" + event
+			if _, exists := transitionKeys[key]; exists {
+				return FSMData{}, fmt.Errorf("FSM %q contains duplicate transition for state %q and event %q", name, from, event)
+			}
+			transitionKeys[key] = struct{}{}
 			transitions = append(transitions, Transition{
-				From:  statePrefix + strings.TrimSpace(itemList[0]),
-				Event: eventPrefix + strings.TrimSpace(itemList[1]),
-				To:    statePrefix + strings.TrimSpace(itemList[2]),
+				From:  statePrefix + from,
+				Event: eventPrefix + event,
+				To:    statePrefix + to,
 			})
 		}
+
 		fsms = append(fsms, FSM{
-			Name:        fsmsMetaInfo.Name,
-			Describe:    fsmsMetaInfo.Describe,
-			Initial:     statePrefix + fsmsMetaInfo.Initial,
+			Name:        name,
+			Describe:    meta.Describe,
+			Initial:     statePrefix + initialName,
 			Transitions: transitions,
 		})
 	}
+
 	return FSMData{
-		PackageDir:       fsmYaml.PackageDir,
-		Package:          fsmYaml.Package,
-		FSMEnginePackage: fsmYaml.FSMEnginePackage,
-		States: append([]string{}, func(states []string) []string {
-			res := []string{}
-			for _, item := range states {
-				res = append(res, statePrefix+item)
-			}
-			return res
-		}(fsmYaml.State)...),
-		Events: append([]string{}, func(events []string) []string {
-			res := []string{}
-			for _, item := range events {
-				res = append(res, eventPrefix+item)
-			}
-			return res
-		}(fsmYaml.Event)...),
-		FSMs: fsms,
-	}
+		PackageDir:       packageDir,
+		Package:          packageName,
+		FSMEnginePackage: enginePackage,
+		States:           states,
+		Events:           events,
+		FSMs:             fsms,
+	}, nil
 }
 
-func LoadData(file string, v interface{}) error {
+func prefixedIdentifiers(values []string, prefix string, kind string) ([]string, map[string]struct{}, error) {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, raw := range values {
+		value := strings.TrimSpace(raw)
+		identifier := prefix + value
+		if value == "" || !token.IsIdentifier(identifier) || token.Lookup(identifier).IsKeyword() {
+			return nil, nil, fmt.Errorf("invalid %s %q", kind, raw)
+		}
+		if _, exists := seen[value]; exists {
+			return nil, nil, fmt.Errorf("duplicate %s %q", kind, value)
+		}
+		seen[value] = struct{}{}
+		result = append(result, identifier)
+	}
+	return result, seen, nil
+}
+
+func LoadData(file string, v any) error {
 	content, err := os.ReadFile(file)
 	if err != nil {
-		return err
+		return fmt.Errorf("read FSM description %q: %w", file, err)
 	}
-
-	return conf.LoadFromYamlBytes(content, v)
+	if err := conf.LoadFromYamlBytes(content, v); err != nil {
+		return fmt.Errorf("parse FSM description %q: %w", file, err)
+	}
+	return nil
 }
 
-func isExist(path string) bool {
+func fileExists(path string) (bool, error) {
 	_, err := os.Stat(path)
-	if err != nil {
-		return os.IsExist(err)
+	if err == nil {
+		return true, nil
 	}
-
-	return true
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("stat %q: %w", path, err)
 }
 
 func CreateDir(path string) error {
-	if !isExist(path) {
-		err := os.MkdirAll(path, os.ModePerm)
-		if err != nil {
-			return err
-		}
-		return err
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return fmt.Errorf("create directory %q: %w", path, err)
 	}
-
 	return nil
 }
 
 func CreateFSMDirLevel(path string, childLevels ...string) error {
-	// create top dir
-	err := CreateDir(path)
-
-	if err != nil {
+	if err := CreateDir(path); err != nil {
 		return err
 	}
-
 	for _, childLevel := range childLevels {
-		err = CreateDir(path + childLevel)
-		if err != nil {
+		childLevel = strings.Trim(childLevel, `/\`)
+		if err := CreateDir(filepath.Join(path, childLevel)); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
-// map[K]V to List[GetValue(K,V)]
-func Map2ListOpt[T comparable, V any, R any](m map[T]V, GetValue func(T, V) R, filter ...func(key T, item V) bool) []R {
-	res := []R{}
+// Map2ListOpt 将 map 转换为切片；filter 返回 true 的元素会被跳过。
+func Map2ListOpt[T comparable, V any, R any](m map[T]V, getValue func(T, V) R, filter ...func(key T, item V) bool) []R {
+	result := make([]R, 0, len(m))
 	for key, item := range m {
 		if len(filter) > 0 && filter[0](key, item) {
 			continue
 		}
-		res = append(res, GetValue(key, item))
+		result = append(result, getValue(key, item))
 	}
-
-	return res
+	return result
 }

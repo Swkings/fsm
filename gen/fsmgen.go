@@ -1,34 +1,47 @@
 package gen
 
 import (
+	"bytes"
 	"fmt"
-	"log"
+	"go/format"
 	"os"
+	"path/filepath"
 	"text/template"
 )
 
-func GenFSM(outFile string, fsmFileName string, tplFileDir string, data FSMData, override bool) {
-	err := CreateFSMDirLevel(outFile, "/"+data.Package)
-	if err != nil {
-		log.Fatal(err)
+func GenFSM(outFile string, fsmFileName string, tplFileDir string, data FSMData, _ bool) error {
+	if err := CreateFSMDirLevel(outFile, data.Package); err != nil {
+		return err
 	}
 
-	fsmFactoryFilePathName := fmt.Sprintf("%v/%v/fsmfactory.go", outFile, data.Package)
-	fmt.Printf("gen fsmFactoryFile: %v\n", fsmFactoryFilePathName)
-	file, _ := os.OpenFile(fsmFactoryFilePathName, os.O_CREATE|os.O_RDWR, 0666)
-	defer file.Close()
-
-	// Define the template
-	fsmTpl, err := template.ParseFiles(tplFileDir + "/fsm.tpl")
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Execute the template
-	err = fsmTpl.Execute(file, TemplateData{
+	outputPath := filepath.Join(outFile, data.Package, "fsmfactory.go")
+	fmt.Printf("gen fsmFactoryFile: %v\n", outputPath)
+	return renderTemplateFile(outputPath, filepath.Join(tplFileDir, "fsm.tpl"), TemplateData{
 		FSMFileName: fsmFileName,
 		FSMData:     data,
 	})
+}
+
+func renderTemplateFile(outputPath string, templatePath string, data any) error {
+	tpl, err := template.ParseFiles(templatePath)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("parse template %q: %w", templatePath, err)
 	}
+
+	var buffer bytes.Buffer
+	if err := tpl.Execute(&buffer, data); err != nil {
+		return fmt.Errorf("render generated file %q: %w", outputPath, err)
+	}
+	content := buffer.Bytes()
+	if filepath.Ext(outputPath) == ".go" {
+		content, err = format.Source(content)
+		if err != nil {
+			return fmt.Errorf("format generated file %q: %w", outputPath, err)
+		}
+	}
+
+	if err := os.WriteFile(outputPath, content, 0o644); err != nil {
+		return fmt.Errorf("write generated file %q: %w", outputPath, err)
+	}
+	return nil
 }

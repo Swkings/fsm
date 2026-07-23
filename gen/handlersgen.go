@@ -2,10 +2,8 @@ package gen
 
 import (
 	"fmt"
-	"log"
-	"os"
-
-	"text/template"
+	"path/filepath"
+	"sort"
 
 	"github.com/swkings/fsm"
 )
@@ -18,52 +16,60 @@ type HandlerData struct {
 	FSMNameList      []fsm.FSMName
 }
 
-func GenHandlers(outFile string, fsmFileName string, tplFileDir string, data FSMData, override bool) {
-	err := CreateFSMDirLevel(outFile+"/"+data.Package, "/handlers")
-	if err != nil {
-		log.Fatal(err)
+func GenHandlers(outFile string, fsmFileName string, tplFileDir string, data FSMData, override bool) error {
+	if err := CreateFSMDirLevel(filepath.Join(outFile, data.Package), "handlers"); err != nil {
+		return err
 	}
 
-	var handleItemMap = map[fsm.EventStateKey]*HandlerData{}
-	for _, fsmData := range data.FSMs {
-		for _, transition := range fsmData.Transitions {
-			eventStateKey := fsm.EventStateKey{
+	handlerItems := collectHandlerData(data)
+	keys := make([]fsm.EventStateKey, 0, len(handlerItems))
+	for key := range handlerItems {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].FromState == keys[j].FromState {
+			return keys[i].Event < keys[j].Event
+		}
+		return keys[i].FromState < keys[j].FromState
+	})
+
+	for _, key := range keys {
+		outputPath := filepath.Join(outFile, data.Package, "handlers", key.String()+".go")
+		exists, err := fileExists(outputPath)
+		if err != nil {
+			return err
+		}
+		if exists && !override {
+			continue
+		}
+
+		fmt.Printf("gen handlerFile: %v\n", outputPath)
+		if err := renderTemplateFile(outputPath, filepath.Join(tplFileDir, "handler.tpl"), handlerItems[key]); err != nil {
+			return err
+		}
+	}
+
+	return GenCommons(outFile, fsmFileName, tplFileDir, data)
+}
+
+func collectHandlerData(data FSMData) map[fsm.EventStateKey]*HandlerData {
+	items := make(map[fsm.EventStateKey]*HandlerData)
+	for _, machine := range data.FSMs {
+		for _, transition := range machine.Transitions {
+			key := fsm.EventStateKey{
 				Event:     fsm.FSMEvent(transition.Event),
 				FromState: fsm.FSMState(transition.From),
 			}
-			if _, ok := handleItemMap[eventStateKey]; !ok {
-				handleItemMap[eventStateKey] = &HandlerData{
+			if _, exists := items[key]; !exists {
+				items[key] = &HandlerData{
 					PackageDir:       data.PackageDir,
 					Package:          data.Package,
 					FSMEnginePackage: data.FSMEnginePackage,
 					Transition:       transition,
-					FSMNameList:      []fsm.FSMName{},
 				}
 			}
-			handleItemMap[eventStateKey].FSMNameList = append(handleItemMap[eventStateKey].FSMNameList, fsm.FSMName(fsmData.Name))
+			items[key].FSMNameList = append(items[key].FSMNameList, fsm.FSMName(machine.Name))
 		}
 	}
-
-	handlersDir := fmt.Sprintf("%v/%v/handlers", outFile, data.Package)
-
-	handlerTpl, err := template.ParseFiles(tplFileDir + "/single_handler.tpl")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for key, handlerData := range handleItemMap {
-		handlerFilePathName := handlersDir + "/" + key.String() + ".go"
-		if isExist(handlerFilePathName) && !override {
-			continue
-		}
-		fmt.Printf("gen handlerFile: %v\n", handlerFilePathName)
-		payloadFile, _ := os.OpenFile(handlerFilePathName, os.O_CREATE|os.O_RDWR, 0666)
-		defer payloadFile.Close()
-		err = handlerTpl.Execute(payloadFile, handlerData)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	GenCommons(outFile, fsmFileName, tplFileDir, data)
+	return items
 }

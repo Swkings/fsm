@@ -1,4 +1,5 @@
 PackageDir: test
+FSMEnginePackage: github.com/swkings
 Package: door
 State:
     - Open

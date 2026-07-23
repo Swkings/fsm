@@ -2,60 +2,41 @@ package gen
 
 import (
 	"fmt"
-	"log"
-	"os"
-	"text/template"
+	"path/filepath"
 )
 
-func GenTypes(outFile string, fsmFileName string, tplFileDir string, data FSMData, override bool) {
-	err := CreateFSMDirLevel(outFile+"/"+data.Package, "/types")
-	if err != nil {
-		log.Fatal(err)
+func GenTypes(outFile string, fsmFileName string, tplFileDir string, data FSMData, override bool) error {
+	if err := CreateFSMDirLevel(filepath.Join(outFile, data.Package), "types"); err != nil {
+		return err
 	}
-
-	genPayload(outFile, fsmFileName, tplFileDir, data, override)
-	genFsmMetaData(outFile, fsmFileName, tplFileDir, data, override)
+	if err := genPayload(outFile, fsmFileName, tplFileDir, data, override); err != nil {
+		return err
+	}
+	return genFSMMetaData(outFile, fsmFileName, tplFileDir, data)
 }
 
-func genPayload(outFile string, fsmFileName string, tplFileDir string, data FSMData, override bool) {
-	typesDir := fmt.Sprintf("%v/%v/types", outFile, data.Package)
-	payloadFilePathName := typesDir + "/payload.go"
-	if isExist(payloadFilePathName) && !override {
-		return
-	}
-	fmt.Printf("gen payloadFile: %v\n", payloadFilePathName)
-	payloadFile, _ := os.OpenFile(payloadFilePathName, os.O_CREATE|os.O_RDWR, 0666)
-	defer payloadFile.Close()
-
-	payloadTpl, err := template.ParseFiles(tplFileDir + "/payload.tpl")
+func genPayload(outFile string, fsmFileName string, tplFileDir string, data FSMData, override bool) error {
+	outputPath := filepath.Join(outFile, data.Package, "types", "payload.go")
+	exists, err := fileExists(outputPath)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	err = payloadTpl.Execute(payloadFile, TemplateData{
+	if exists && !override {
+		return nil
+	}
+
+	fmt.Printf("gen payloadFile: %v\n", outputPath)
+	return renderTemplateFile(outputPath, filepath.Join(tplFileDir, "payload.tpl"), TemplateData{
 		FSMFileName: fsmFileName,
 		FSMData:     data,
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
 }
 
-func genFsmMetaData(outFile string, fsmFileName string, tplFileDir string, data FSMData, override bool) {
-	typesDir := fmt.Sprintf("%v/%v/types", outFile, data.Package)
-	metaDataFilePathName := typesDir + "/fsmmetadata.go"
-	fmt.Printf("gen metaDataFile: %v\n", metaDataFilePathName)
-	payloadFile, _ := os.OpenFile(metaDataFilePathName, os.O_CREATE|os.O_RDWR, 0666)
-	defer payloadFile.Close()
-
-	metaDataTpl, err := template.ParseFiles(tplFileDir + "/fsmmetadata.tpl")
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = metaDataTpl.Execute(payloadFile, TemplateData{
+func genFSMMetaData(outFile string, fsmFileName string, tplFileDir string, data FSMData) error {
+	outputPath := filepath.Join(outFile, data.Package, "types", "fsmmetadata.go")
+	fmt.Printf("gen metaDataFile: %v\n", outputPath)
+	return renderTemplateFile(outputPath, filepath.Join(tplFileDir, "fsmmetadata.tpl"), TemplateData{
 		FSMFileName: fsmFileName,
 		FSMData:     data,
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
 }

@@ -5,55 +5,72 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 	"runtime"
-	"scheduler-subway/common/fsm/gen"
 	"strings"
+
+	"github.com/swkings/fsm/gen"
 )
 
 var (
 	packageFatherDir = flag.String("out", "", "the package father dir")
 	templateDir      = flag.String("tpl", "", "the template file dir")
 	fsmDescribeFile  = flag.String("fsm", "", "the fsm describe file")
-	override         = flag.Bool("c", false, "override all file")
+	override         = flag.Bool("c", false, "override user-editable payload and handler files")
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	flag.Parse()
-	if strings.Trim(*packageFatherDir, " ") == "" {
-		*packageFatherDir, _ = os.Getwd()
+	if strings.TrimSpace(*packageFatherDir) == "" {
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("get working directory: %w", err)
+		}
+		*packageFatherDir = workingDirectory
 	}
-	_, fullFilePath, _, _ := runtime.Caller(0)
-	fullFilePathItems := strings.Split(fullFilePath, "/")
-	mainFileDir := strings.Join(fullFilePathItems[:len(fullFilePathItems)-1], "/")
-	if strings.Trim(*templateDir, " ") == "" {
-		*templateDir = fmt.Sprintf("%v/template", mainFileDir)
-	} else if (*templateDir)[len(*templateDir)-1] == '/' {
-		*templateDir = (*templateDir)[:len(*templateDir)-1]
+
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return fmt.Errorf("locate generator directory")
 	}
-	if strings.Trim(*fsmDescribeFile, " ") == "" {
-		*fsmDescribeFile = fmt.Sprintf("%v/door.fsm", mainFileDir)
+	generatorDir := filepath.Dir(currentFile)
+	if strings.TrimSpace(*templateDir) == "" {
+		*templateDir = filepath.Join(generatorDir, "template")
+	}
+	if strings.TrimSpace(*fsmDescribeFile) == "" {
+		*fsmDescribeFile = filepath.Join(generatorDir, "door.fsm")
 	}
 
 	fmt.Printf("packageFatherDir: %v\n", *packageFatherDir)
 	fmt.Printf("templateDir: %v\n", *templateDir)
 	fmt.Printf("fsmDescribeFile: %v\n", *fsmDescribeFile)
 
-	var fsmYaml gen.FSMYaml
+	var fsmYAML gen.FSMYaml
+	if err := gen.LoadData(*fsmDescribeFile, &fsmYAML); err != nil {
+		return err
+	}
+	data, err := gen.ParseFSMData(fsmYAML)
+	if err != nil {
+		return err
+	}
 
-	gen.LoadData(*fsmDescribeFile, &fsmYaml)
-
-	// Define the FSM data
-	data := gen.ParseFSMData(fsmYaml)
-	// fmt.Printf("fsmYaml: %v\n", data)
-
-	fsmFileName := func() string {
-		fsmDescribeFileItems := strings.Split(*fsmDescribeFile, "/")
-		return fsmDescribeFileItems[len(fsmDescribeFileItems)-1]
-	}()
-
-	gen.GenFSM(*packageFatherDir, fsmFileName, *templateDir, data, *override)
-	gen.GenTypes(*packageFatherDir, fsmFileName, *templateDir, data, *override)
-	gen.GenHandlers(*packageFatherDir, fsmFileName, *templateDir, data, *override)
-
+	fsmFileName := filepath.Base(*fsmDescribeFile)
+	if err := gen.GenFSM(*packageFatherDir, fsmFileName, *templateDir, data, *override); err != nil {
+		return err
+	}
+	if err := gen.GenTypes(*packageFatherDir, fsmFileName, *templateDir, data, *override); err != nil {
+		return err
+	}
+	if err := gen.GenHandlers(*packageFatherDir, fsmFileName, *templateDir, data, *override); err != nil {
+		return err
+	}
+	return nil
 }

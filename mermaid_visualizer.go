@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // highlightingColor 是流程图中当前状态节点使用的高亮填充色。
@@ -36,35 +37,37 @@ func (fsm *FSM[T]) VisualizeForMermaidWithGraphType(graphType MermaidDiagramType
 // 图的起始箭头指向状态机的当前状态，随后按稳定顺序输出全部迁移。
 func (fsm *FSM[T]) visualizeForMermaidAsStateDiagram() string {
 	var buf bytes.Buffer
-
-	sortedTransitionKeys := getSortedTransitionKeys(fsm.transitions)
+	transitions, currentState := fsm.visualizationSnapshot()
+	sortedTransitionKeys := getSortedTransitionKeys(transitions)
+	sortedStates, statesToIDMap := getSortedStates(transitions, currentState)
 
 	buf.WriteString("```mermaid\n")
 	buf.WriteString("stateDiagram-v2\n")
-	buf.WriteString(fmt.Sprintln(`    [*] -->`, fsm.currentState))
+	for _, state := range sortedStates {
+		buf.WriteString(fmt.Sprintf("    state %s as %s\n", strconv.Quote(string(state)), statesToIDMap[string(state)]))
+	}
+	buf.WriteString(fmt.Sprintf("    [*] --> %s\n", statesToIDMap[string(currentState)]))
 
-	for _, k := range sortedTransitionKeys {
-		v := fsm.transitions[k]
-		buf.WriteString(fmt.Sprintf(`    %s --> %s: %s`, k.FromState, v, k.Event))
-		buf.WriteString("\n")
+	for _, key := range sortedTransitionKeys {
+		target := transitions[key]
+		buf.WriteString(fmt.Sprintf("    %s --> %s: %s\n", statesToIDMap[string(key.FromState)], statesToIDMap[string(target)], strconv.Quote(string(key.Event))))
 	}
 
 	buf.WriteString("```\n")
-
 	return buf.String()
 }
 
 // visualizeForMermaidAsFlowChart 生成 Mermaid 流程图文本，并高亮当前状态节点。
 func (fsm *FSM[T]) visualizeForMermaidAsFlowChart() string {
 	var buf bytes.Buffer
-
-	sortedTransitionKeys := getSortedTransitionKeys(fsm.transitions)
-	sortedStates, statesToIDMap := getSortedStates(fsm.transitions)
+	transitions, currentState := fsm.visualizationSnapshot()
+	sortedTransitionKeys := getSortedTransitionKeys(transitions)
+	sortedStates, statesToIDMap := getSortedStates(transitions, currentState)
 
 	writeFlowChartGraphType(&buf)
 	writeFlowChartStates(&buf, sortedStates, statesToIDMap)
-	writeFlowChartTransitions(&buf, fsm.transitions, sortedTransitionKeys, statesToIDMap)
-	writeFlowChartHighlightCurrent(&buf, string(fsm.currentState), statesToIDMap)
+	writeFlowChartTransitions(&buf, transitions, sortedTransitionKeys, statesToIDMap)
+	writeFlowChartHighlightCurrent(&buf, string(currentState), statesToIDMap)
 
 	return buf.String()
 }
@@ -77,7 +80,7 @@ func writeFlowChartGraphType(buf *bytes.Buffer) {
 // writeFlowChartStates 按稳定顺序写入状态节点及其内部节点 ID。
 func writeFlowChartStates(buf *bytes.Buffer, sortedStates []FSMState, statesToIDMap map[string]string) {
 	for _, state := range sortedStates {
-		buf.WriteString(fmt.Sprintf(`    %s[%s]`, statesToIDMap[string(state)], state))
+		buf.WriteString(fmt.Sprintf(`    %s[%s]`, statesToIDMap[string(state)], strconv.Quote(string(state))))
 		buf.WriteString("\n")
 	}
 
@@ -88,7 +91,7 @@ func writeFlowChartStates(buf *bytes.Buffer, sortedStates []FSMState, statesToID
 func writeFlowChartTransitions(buf *bytes.Buffer, transitions map[EventStateKey]FSMState, sortedTransitionKeys []EventStateKey, statesToIDMap map[string]string) {
 	for _, transition := range sortedTransitionKeys {
 		target := transitions[transition]
-		buf.WriteString(fmt.Sprintf(`    %s --> |%s| %s`, statesToIDMap[string(transition.FromState)], transition.Event, statesToIDMap[string(target)]))
+		buf.WriteString(fmt.Sprintf(`    %s -->|%s| %s`, statesToIDMap[string(transition.FromState)], strconv.Quote(string(transition.Event)), statesToIDMap[string(target)]))
 		buf.WriteString("\n")
 	}
 	buf.WriteString("\n")
@@ -101,14 +104,15 @@ func writeFlowChartHighlightCurrent(buf *bytes.Buffer, current string, statesToI
 }
 
 // VisualizeMermaid 将 stateDiagram-v2 格式的 Mermaid Markdown 文本写入 outFile。
-// 文件不存在时会创建；文件已存在时从文件起始位置写入，但不会主动截断旧的尾部内容。
+// 文件不存在时会创建；文件已存在时会先截断，避免残留旧内容。
 func (fsm *FSM[T]) VisualizeMermaid(outFile string) error {
-	codeStr, _ := fsm.VisualizeForMermaidWithGraphType(StateDiagram)
-	file, _ := os.OpenFile(outFile, os.O_CREATE|os.O_RDWR, 0666)
-	defer file.Close()
+	code, err := fsm.VisualizeForMermaidWithGraphType(StateDiagram)
+	if err != nil {
+		return err
+	}
 
-	n, err := file.WriteString(codeStr)
-	fmt.Printf("n: %v, err: %v\n", n, err)
-
-	return err
+	if err := os.WriteFile(outFile, []byte(code), 0o644); err != nil {
+		return fmt.Errorf("write mermaid file %q: %w", outFile, err)
+	}
+	return nil
 }

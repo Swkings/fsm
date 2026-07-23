@@ -1,6 +1,7 @@
 package fsm
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -26,7 +27,7 @@ type EventStateKey struct {
 }
 
 // String 返回事件与源状态拼接后的可读标识，主要用于错误信息和生成代码中的名称。
-func (esk *EventStateKey) String() string {
+func (esk EventStateKey) String() string {
 	return string(esk.Event) + "_" + string(esk.FromState)
 }
 
@@ -44,9 +45,13 @@ var (
 		return fmt.Errorf("event state key %v is repeated", eventStateKey.String())
 	}
 	// ErrorSubFSMInvalid 表示子状态机配置无效。
-	ErrorSubFSMInvalid = fmt.Errorf("sub fsm invalid")
+	ErrorSubFSMInvalid = errors.New("sub fsm invalid")
 	// ErrorSubFSMSameAsFather 表示子状态机不能与父状态机相同。
-	ErrorSubFSMSameAsFather = fmt.Errorf("sub fsm can not same as father fsm")
+	ErrorSubFSMSameAsFather = errors.New("sub fsm can not same as father fsm")
+	// ErrorEventProcessing 表示状态机正在处理另一个事件，不能重入。
+	ErrorEventProcessing = errors.New("fsm event is processing")
+	// ErrorStateChanged 表示 Handler 执行期间状态被外部修改，迁移无法安全提交。
+	ErrorStateChanged = errors.New("fsm state changed during event processing")
 )
 
 // TransitionItem 描述一条完整的状态迁移规则：FromState --Event/Handler--> ToState。
@@ -95,7 +100,7 @@ type (
 		Handler Actor[T]
 
 		// AfterHandler 执行保存派生数据、清理临时数据等收尾工作。
-		// 当前实现会调用它，但不会向上传递其返回错误。
+		// 返回错误时本次迁移失败，目标状态不会提交。
 		AfterHandler Actor[T]
 	}
 
@@ -124,12 +129,12 @@ type (
 		eventSearch map[FSMState][]FSMEvent
 		// Payload 是与状态机绑定的业务数据；未传入载荷时为 nil。
 		Payload *T
-		// stateLock 保护 currentState 的直接读写。
+		// stateLock 保护运行状态、迁移追踪标识和处理中的事件。
 		stateLock sync.RWMutex
 		// eventLock 保证同一个状态机实例同一时间只处理一个事件。
 		eventLock sync.Mutex
-		// eventSearchLock 保护 eventSearch 的读写。
-		eventSearchLock sync.RWMutex
+		// configLock 统一保护 transitions、handlers 和 eventSearch，确保迁移配置一致。
+		configLock sync.RWMutex
 	}
 )
 
@@ -159,24 +164,30 @@ func NewFSM[T any](fsmName FSMName, initState FSMState, payloads ...*T) *FSM[T] 
 
 // SetTransitions 批量注册状态迁移规则并返回 FSM，以便链式初始化。
 // Event 和 FromState 相同的规则被视为重复规则，重复注册会触发 panic，避免已有规则被静默覆盖。
-// 该方法预期在状态机开始处理事件前调用，不负责与 ProcessEvent 并发同步。
+// 注册过程使用独立配置锁，整批规则会先校验再原子提交，可与事件处理和可视化并发调用。
 func (fsm *FSM[T]) SetTransitions(transitionItems ...TransitionItem[T]) *FSM[T] {
-	fsm.stateLock.Lock()
-	defer fsm.stateLock.Unlock()
+	fsm.configLock.Lock()
+	defer fsm.configLock.Unlock()
 
-	fsm.eventLock.Lock()
-	defer fsm.eventLock.Unlock()
-
-	fsm.eventSearchLock.Lock()
-	defer fsm.eventSearchLock.Unlock()
-
+	seen := make(map[EventStateKey]struct{}, len(transitionItems))
 	for _, transitionItem := range transitionItems {
 		eventStateKey := EventStateKey{
 			Event:     transitionItem.Event,
 			FromState: transitionItem.FromState,
 		}
-		if fsm.existEventStateKey(eventStateKey) {
-			panic(ErrorEventStateKeyRepeated)
+		if _, exists := fsm.transitions[eventStateKey]; exists {
+			panic(ErrorEventStateKeyRepeated(eventStateKey))
+		}
+		if _, repeated := seen[eventStateKey]; repeated {
+			panic(ErrorEventStateKeyRepeated(eventStateKey))
+		}
+		seen[eventStateKey] = struct{}{}
+	}
+
+	for _, transitionItem := range transitionItems {
+		eventStateKey := EventStateKey{
+			Event:     transitionItem.Event,
+			FromState: transitionItem.FromState,
 		}
 		fsm.transitions[eventStateKey] = transitionItem.ToState
 		fsm.handlers[eventStateKey] = transitionItem.Handler
@@ -195,16 +206,20 @@ func (fsm *FSM[T]) setEventSearch(eventStateKey EventStateKey) {
 }
 
 // GetEventUnderState 返回指定状态下已注册的事件列表。
-// 返回值是内部切片，调用方应将其视为只读数据，避免直接修改影响状态机配置。
+// 返回值是内部事件列表的副本，调用方可以安全修改。
 func (fsm *FSM[T]) GetEventUnderState(state FSMState) []FSMEvent {
-	fsm.eventSearchLock.RLock()
-	defer fsm.eventSearchLock.RUnlock()
+	fsm.configLock.RLock()
+	defer fsm.configLock.RUnlock()
 
-	return fsm.eventSearch[state]
+	return append([]FSMEvent(nil), fsm.eventSearch[state]...)
 }
 
-// SetPayload 替换状态机绑定的业务载荷并返回 FSM，以便链式调用。
+// SetPayload 在状态锁保护下替换状态机绑定的业务载荷并返回 FSM，以便链式调用。
+// Payload 指向的业务对象仍由调用方负责同步；Handler 失败时不会自动回滚其内部修改。
 func (fsm *FSM[T]) SetPayload(payload *T) *FSM[T] {
+	fsm.stateLock.Lock()
+	defer fsm.stateLock.Unlock()
+
 	fsm.Payload = payload
 
 	return fsm
@@ -227,74 +242,128 @@ func (fsm *FSM[T]) GetCurrentState() FSMState {
 	return fsm.currentState
 }
 
-// ExistEventStateKey 判断指定的“事件+源状态”迁移规则是否已经注册。
-func (fsm *FSM[T]) existEventStateKey(eventStateKey EventStateKey) bool {
-	_, ok := fsm.transitions[eventStateKey]
+// getTransition 返回迁移规则的目标状态、Handler 及存在标记。
+func (fsm *FSM[T]) getTransition(eventStateKey EventStateKey) (FSMState, Handler[T], bool) {
+	fsm.configLock.RLock()
+	defer fsm.configLock.RUnlock()
 
-	return ok
+	state, exists := fsm.transitions[eventStateKey]
+	return state, fsm.handlers[eventStateKey], exists
 }
 
-// MustGetTransitionStateAndHandler 返回指定迁移规则的目标状态和 Handler。
-// 调用前应先通过 ExistEventStateKey 确认规则存在；规则不存在时会返回相应类型的零值。
-func (fsm *FSM[T]) mustGetTransitionStateAndHandler(esk EventStateKey) (FSMState, Handler[T]) {
-	state, handler := fsm.transitions[esk], fsm.handlers[esk]
+// visualizationSnapshot 复制可视化所需的迁移表和当前状态，避免持锁执行格式化。
+func (fsm *FSM[T]) visualizationSnapshot() (map[EventStateKey]FSMState, FSMState) {
+	fsm.configLock.RLock()
+	transitions := make(map[EventStateKey]FSMState, len(fsm.transitions))
+	for key, state := range fsm.transitions {
+		transitions[key] = state
+	}
+	fsm.configLock.RUnlock()
 
-	return state, handler
+	currentState, _ := fsm.stateSnapshot()
+	return transitions, currentState
 }
 
 // ProcessEvent 在当前状态下处理事件，并返回本次迁移的完整追踪信息。
 //
 // 处理流程如下：
 //
-//  1. 串行化事件处理并记录待处理事件；
+//  1. 尝试取得事件处理权；状态机忙碌或发生重入时立即返回 ErrorEventProcessing；
 //  2. 查找“当前状态+事件”对应的迁移规则；
 //  3. 按顺序执行 BeforeHandler、Handler 和 AfterHandler；
 //  4. 全部处理成功后提交目标状态并生成新的迁移追踪标识。
 //
 // 规则不存在或 Handler 返回错误时会返回失败追踪，当前状态及追踪标识保持不变。
 func (fsm *FSM[T]) ProcessEvent(event FSMEvent) (TransitionTrace, error) {
-	fsm.eventLock.Lock()
+	if !fsm.eventLock.TryLock() {
+		fromState, prevTtID := fsm.stateSnapshot()
+		err := ErrorEventProcessing
+		trace := NewTransitionTrace(prevTtID, uuid.NewString(), fromState, event).Start()
+		trace.SetFinalState(fromState).TransitionFail().End(err)
+		return trace.TrimPtr(), err
+	}
 	defer fsm.eventLock.Unlock()
 
+	fromState, prevTtID := fsm.beginProcessingEvent(event)
+	defer fsm.clearProcessingEvent()
+
+	nextTtID := uuid.NewString()
+	trace := NewTransitionTrace(prevTtID, nextTtID, fromState, event).Start()
+	eventStateKey := EventStateKey{Event: event, FromState: fromState}
+
+	toState, handler, exists := fsm.getTransition(eventStateKey)
+	if !exists {
+		err := ErrorEventStateKeyInvalid(eventStateKey)
+		trace.SetFinalState(fromState).TransitionFail().End(err)
+		return trace.TrimPtr(), err
+	}
+	trace.SetToState(toState)
+
+	if err := handler.apply(fsm); err != nil {
+		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail().End(err)
+		return trace.TrimPtr(), err
+	}
+
+	finalState, err := fsm.commitTransition(fromState, event, toState, nextTtID)
+	if err != nil {
+		trace.SetFinalState(finalState).TransitionFail().End(err)
+		return trace.TrimPtr(), err
+	}
+
+	trace.SetFinalState(finalState).TransitionSuccess().End()
+	return trace.TrimPtr(), nil
+}
+
+// stateSnapshot 返回当前状态和最近一次成功迁移标识的一致快照。
+func (fsm *FSM[T]) stateSnapshot() (FSMState, string) {
 	fsm.stateLock.RLock()
 	defer fsm.stateLock.RUnlock()
 
+	return fsm.currentState, fsm.TtId
+}
+
+// beginProcessingEvent 记录正在处理的事件，并返回迁移开始前的状态快照。
+func (fsm *FSM[T]) beginProcessingEvent(event FSMEvent) (FSMState, string) {
+	fsm.stateLock.Lock()
+	defer fsm.stateLock.Unlock()
+
 	fsm.processingEvent = event
-	nextTtId := uuid.NewString()
-	transTrace := NewTransitionTrace(fsm.TtId, nextTtId, fsm.currentState, event).Start()
+	return fsm.currentState, fsm.TtId
+}
 
-	eventStateKey := EventStateKey{
-		Event:     event,
-		FromState: fsm.currentState,
+// clearProcessingEvent 确保所有成功或失败路径都会清理正在处理的事件。
+func (fsm *FSM[T]) clearProcessingEvent() {
+	fsm.stateLock.Lock()
+	defer fsm.stateLock.Unlock()
+
+	fsm.processingEvent = EventEmpty
+}
+
+// commitTransition 仅在状态未被外部修改时提交迁移结果。
+func (fsm *FSM[T]) commitTransition(
+	fromState FSMState,
+	event FSMEvent,
+	toState FSMState,
+	ttID string,
+) (FSMState, error) {
+	fsm.stateLock.Lock()
+	defer fsm.stateLock.Unlock()
+
+	if fsm.currentState != fromState {
+		return fsm.currentState, ErrorStateChanged
 	}
 
-	if !fsm.existEventStateKey(eventStateKey) {
-		transTrace.SetFinalState(fsm.currentState).End()
-		return transTrace.TrimPtr(), ErrorEventStateKeyInvalid(eventStateKey)
-	}
+	fsm.fromState = fromState
+	fsm.fromEvent = event
+	fsm.processingEvent = EventEmpty
+	fsm.currentState = toState
+	fsm.TtId = ttID
 
-	toState, handler := fsm.mustGetTransitionStateAndHandler(eventStateKey)
-	transTrace.SetToState(toState)
-
-	if err := handler.apply(fsm); err != nil {
-		transTrace.SetFinalState(fsm.currentState).End(err)
-		return transTrace.TrimPtr(), err
-	}
-
-	transTrace.SetFinalState(toState).TransitionSuccess().End()
-
-	fsm.setEnvironment(
-		event,
-		toState,
-		nextTtId,
-	)
-
-	return transTrace.TrimPtr(), nil
+	return fsm.currentState, nil
 }
 
 // apply 按固定顺序执行 Handler 的三个阶段。
-// BeforeHandler 或 Handler 返回错误时立即中止后续阶段。为保持当前行为，
-// AfterHandler 的返回值不会向上传递；收尾阶段如需处理错误，应在内部自行完成。
+// 任一阶段返回错误都会立即终止处理并向上传递，目标状态不会提交。
 func (h Handler[T]) apply(
 	fsm *FSM[T],
 ) error {
@@ -313,23 +382,10 @@ func (h Handler[T]) apply(
 	}
 
 	if h.AfterHandler != nil {
-		h.AfterHandler(fsm)
+		if err := h.AfterHandler(fsm); err != nil {
+			return err
+		}
 	}
 
 	return nil
-}
-
-// setEnvironment 在迁移成功后一次性更新状态机运行环境。
-// 它记录迁移前状态与事件，清除正在处理的事件，并提交目标状态和新的迁移追踪标识。
-func (fsm *FSM[T]) setEnvironment(
-	event FSMEvent,
-	toState FSMState,
-	ttId string,
-) {
-	fsm.fromState = fsm.currentState
-	fsm.fromEvent = event
-	fsm.processingEvent = EventEmpty
-
-	fsm.currentState = toState
-	fsm.TtId = ttId
 }

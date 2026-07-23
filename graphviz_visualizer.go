@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
-	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -27,8 +27,12 @@ func getSortedTransitionKeys(transitions map[EventStateKey]FSMState) []EventStat
 }
 
 // getSortedStates 收集迁移图中出现的全部状态，按名称排序，并为每个状态生成稳定的节点 ID。
-func getSortedStates(transitions map[EventStateKey]FSMState) ([]FSMState, map[string]string) {
+func getSortedStates(transitions map[EventStateKey]FSMState, additionalStates ...FSMState) ([]FSMState, map[string]string) {
 	statesToIDMap := make(map[string]string)
+	for _, state := range additionalStates {
+		statesToIDMap[string(state)] = ""
+	}
+
 	for transition, target := range transitions {
 		if _, ok := statesToIDMap[string(transition.FromState)]; !ok {
 			statesToIDMap[string(transition.FromState)] = ""
@@ -44,16 +48,12 @@ func getSortedStates(transitions map[EventStateKey]FSMState) ([]FSMState, map[st
 	}
 	sort.Strings(sortedStates)
 
+	states := make([]FSMState, len(sortedStates))
 	for i, state := range sortedStates {
 		statesToIDMap[state] = fmt.Sprintf("id%d", i)
+		states[i] = FSMState(state)
 	}
-	return func() []FSMState {
-		res := []FSMState{}
-		for _, item := range sortedStates {
-			res = append(res, FSMState(item))
-		}
-		return res
-	}(), statesToIDMap
+	return states, statesToIDMap
 }
 
 // writeHeaderLine 写入 Graphviz DOT 图的声明和默认节点样式。
@@ -69,7 +69,7 @@ func writeHeaderLine(buf *bytes.Buffer) {
 func writeTransitions(buf *bytes.Buffer, sortedEKeys []EventStateKey, transitions map[EventStateKey]FSMState) {
 	for _, k := range sortedEKeys {
 		v := transitions[k]
-		buf.WriteString(fmt.Sprintf(`    "%s" -> "%s" [ label = "%s" ];`, k.FromState, v, k.Event))
+		buf.WriteString(fmt.Sprintf(`    %s -> %s [ label = %s ];`, strconv.Quote(string(k.FromState)), strconv.Quote(string(v)), strconv.Quote(string(k.Event))))
 		buf.WriteString("\n")
 	}
 
@@ -80,9 +80,9 @@ func writeTransitions(buf *bytes.Buffer, sortedEKeys []EventStateKey, transition
 func writeStates(buf *bytes.Buffer, current FSMState, sortedStateKeys []FSMState) {
 	for _, k := range sortedStateKeys {
 		if k == current {
-			buf.WriteString(fmt.Sprintf(`    "%s" [color = "red"];`, k))
+			buf.WriteString(fmt.Sprintf(`    %s [color = "red"];`, strconv.Quote(string(k))))
 		} else {
-			buf.WriteString(fmt.Sprintf(`    "%s";`, k))
+			buf.WriteString(fmt.Sprintf(`    %s;`, strconv.Quote(string(k))))
 		}
 		buf.WriteString("\n")
 	}
@@ -97,13 +97,14 @@ func writeFooter(buf *bytes.Buffer) {
 // 迁移和状态会先排序，以保证相同状态机配置生成稳定、便于比较的结果；当前状态使用红色边框标识。
 func (fsm *FSM[T]) DotString() string {
 	var buf bytes.Buffer
+	transitions, currentState := fsm.visualizationSnapshot()
 
-	sortedEKeys := getSortedTransitionKeys(fsm.transitions)
-	sortedStateKeys, _ := getSortedStates(fsm.transitions)
+	sortedEKeys := getSortedTransitionKeys(transitions)
+	sortedStateKeys, _ := getSortedStates(transitions, currentState)
 
 	writeHeaderLine(&buf)
-	writeTransitions(&buf, sortedEKeys, fsm.transitions)
-	writeStates(&buf, fsm.currentState, sortedStateKeys)
+	writeTransitions(&buf, sortedEKeys, transitions)
+	writeStates(&buf, currentState, sortedStateKeys)
 	writeFooter(&buf)
 
 	return buf.String()
@@ -116,24 +117,17 @@ func (fsm *FSM[T]) VisualizeGraphviz(outFile string) error {
 }
 
 // VisualizeWithDetails 使用调用方指定的 DOT 文本、输出格式、布局、缩放和附加参数执行渲染。
-// 参数会被拼接为 dot 命令并交给系统 Shell 执行，因此应只传入可信内容。
+// 所有参数都会作为独立参数传给 dot，不经过系统 Shell。more 使用空白分隔附加参数。
 func (fsm *FSM[T]) VisualizeWithDetails(outFile string, dot string, format string, layout string, scale string, more string) error {
+	args := []string{"-o" + outFile, "-T" + format, "-K" + layout, "-s" + scale}
+	args = append(args, strings.Fields(more)...)
 
-	cmd := fmt.Sprintf("dot -o%s -T%s -K%s -s%s %s", outFile, format, layout, scale, more)
-
-	return system(cmd, dot)
-}
-
-// system 根据当前操作系统选择命令解释器，将 DOT 文本写入命令标准输入并等待执行结束。
-func system(c string, dot string) error {
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command(`cmd`, `/C`, c)
-	} else {
-		cmd = exec.Command(`/bin/sh`, `-c`, c)
-	}
+	cmd := exec.Command("dot", args...)
 	cmd.Stdin = strings.NewReader(dot)
-	return cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("run graphviz dot: %w: %s", err, strings.TrimSpace(string(output)))
+	}
 
+	return nil
 }

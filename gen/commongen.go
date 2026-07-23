@@ -2,12 +2,8 @@ package gen
 
 import (
 	"fmt"
-	"log"
-	"os"
-
-	"text/template"
-
-	"github.com/swkings/fsm"
+	"path/filepath"
+	"sort"
 )
 
 type CommonData struct {
@@ -18,57 +14,33 @@ type CommonData struct {
 	FSMFileName      string
 }
 
-func GenCommons(outFile string, fsmFileName string, tplFileDir string, data FSMData) {
-	err := CreateFSMDirLevel(outFile+"/"+data.Package, "/handlers")
-	if err != nil {
-		log.Fatal(err)
+func GenCommons(outFile string, fsmFileName string, tplFileDir string, data FSMData) error {
+	if err := CreateFSMDirLevel(filepath.Join(outFile, data.Package), "handlers"); err != nil {
+		return err
 	}
 
-	var handleItemMap = map[fsm.EventStateKey]*HandlerData{}
-	for _, fsmData := range data.FSMs {
-		for _, transition := range fsmData.Transitions {
-			eventStateKey := fsm.EventStateKey{
-				Event:     fsm.FSMEvent(transition.Event),
-				FromState: fsm.FSMState(transition.From),
-			}
-			if _, ok := handleItemMap[eventStateKey]; !ok {
-				handleItemMap[eventStateKey] = &HandlerData{
-					PackageDir:       data.PackageDir,
-					Package:          data.Package,
-					FSMEnginePackage: data.FSMEnginePackage,
-					Transition:       transition,
-					FSMNameList:      []fsm.FSMName{},
-				}
-			}
-			handleItemMap[eventStateKey].FSMNameList = append(handleItemMap[eventStateKey].FSMNameList, fsm.FSMName(fsmData.Name))
+	handlerItems := collectHandlerData(data)
+	items := make([]*HandlerData, 0, len(handlerItems))
+	for _, item := range handlerItems {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		left, right := items[i].Transition, items[j].Transition
+		if left.From == right.From {
+			return left.Event < right.Event
 		}
-	}
+		return left.From < right.From
+	})
 
-	var commonData CommonData = CommonData{
+	commonData := CommonData{
 		PackageDir:       data.PackageDir,
 		Package:          data.Package,
 		FSMEnginePackage: data.FSMEnginePackage,
-		HandleItemList: Map2ListOpt(handleItemMap, func(_ fsm.EventStateKey, hd *HandlerData) *HandlerData {
-			return hd
-		}),
-		FSMFileName: fsmFileName,
+		HandleItemList:   items,
+		FSMFileName:      fsmFileName,
 	}
 
-	handlersDir := fmt.Sprintf("%v/%v/handlers", outFile, data.Package)
-
-	commonTpl, err := template.ParseFiles(tplFileDir + "/single_handler_common.tpl")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	commonFilePathName := handlersDir + "/common.go"
-
-	fmt.Printf("gen commonFile: %v\n", commonFilePathName)
-	payloadFile, _ := os.OpenFile(commonFilePathName, os.O_CREATE|os.O_RDWR, 0666)
-	defer payloadFile.Close()
-	err = commonTpl.Execute(payloadFile, commonData)
-	if err != nil {
-		log.Fatal(err)
-	}
-
+	outputPath := filepath.Join(outFile, data.Package, "handlers", "common.go")
+	fmt.Printf("gen commonFile: %v\n", outputPath)
+	return renderTemplateFile(outputPath, filepath.Join(tplFileDir, "common.tpl"), commonData)
 }

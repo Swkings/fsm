@@ -1,11 +1,9 @@
 package fsm
 
 import (
+	"encoding/json"
 	"fmt"
-
 	"time"
-
-	"github.com/swkings/fsm/common/util"
 )
 
 // TransitionTrace 记录一次 ProcessEvent 调用从开始到结束的迁移信息。
@@ -31,6 +29,9 @@ type TransitionTrace struct {
 	BeginTime int64
 	// EndTime 是迁移结束时的 Unix 纳秒时间戳。
 	EndTime int64
+
+	beginTime time.Time
+	endTime   time.Time
 }
 
 // NewTransitionTrace 创建迁移追踪对象。调用 Start 后才会记录开始时间。
@@ -45,7 +46,8 @@ func NewTransitionTrace(prevTtId string, ttId string, fromState FSMState, event 
 
 // Start 记录当前 Unix 纳秒时间为迁移开始时间，并返回自身以支持链式调用。
 func (tt *TransitionTrace) Start() *TransitionTrace {
-	tt.BeginTime = time.Now().UnixNano()
+	tt.beginTime = time.Now()
+	tt.BeginTime = tt.beginTime.UnixNano()
 
 	return tt
 }
@@ -55,7 +57,20 @@ func (tt *TransitionTrace) End(errs ...error) {
 	if len(errs) > 0 {
 		tt.Error = errs[0]
 	}
-	tt.EndTime = time.Now().UnixNano()
+	tt.endTime = time.Now()
+	tt.EndTime = tt.endTime.UnixNano()
+}
+
+// Duration 返回迁移耗时。由 Start 和 End 创建的追踪使用 Go 单调时钟计算，
+// 反序列化得到的追踪则回退为 Unix 纳秒时间戳之差。
+func (tt *TransitionTrace) Duration() time.Duration {
+	if !tt.beginTime.IsZero() && !tt.endTime.IsZero() {
+		return tt.endTime.Sub(tt.beginTime)
+	}
+	if tt.EndTime <= tt.BeginTime {
+		return 0
+	}
+	return time.Duration(tt.EndTime - tt.BeginTime)
 }
 
 // ReleaseControl 返回追踪对象自身。该方法保留链式调用语义，不修改任何字段。
@@ -98,5 +113,37 @@ func (tt *TransitionTrace) TrimPtr() TransitionTrace {
 
 // String 将迁移追踪格式化为便于日志记录和排查问题的字符串。
 func (tt *TransitionTrace) String() string {
-	return fmt.Sprintf("%v", util.PrettyMapStruct(tt, false))
+	errorMessage := ""
+	if tt.Error != nil {
+		errorMessage = tt.Error.Error()
+	}
+	view := struct {
+		TtId             string   `json:"TtId"`
+		PrevTtId         string   `json:"PrevTtId"`
+		FromState        FSMState `json:"FromState"`
+		Event            FSMEvent `json:"Event"`
+		ToState          FSMState `json:"ToState"`
+		TransitionResult bool     `json:"TransitionResult"`
+		FinalState       FSMState `json:"FinalState"`
+		Error            string   `json:"Error,omitempty"`
+		BeginTime        int64    `json:"BeginTime"`
+		EndTime          int64    `json:"EndTime"`
+	}{
+		TtId:             tt.TtId,
+		PrevTtId:         tt.PrevTtId,
+		FromState:        tt.FromState,
+		Event:            tt.Event,
+		ToState:          tt.ToState,
+		TransitionResult: tt.TransitionResult,
+		FinalState:       tt.FinalState,
+		Error:            errorMessage,
+		BeginTime:        tt.BeginTime,
+		EndTime:          tt.EndTime,
+	}
+
+	data, err := json.Marshal(view)
+	if err != nil {
+		return fmt.Sprintf("%+v", *tt)
+	}
+	return string(data)
 }
