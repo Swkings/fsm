@@ -166,6 +166,12 @@ func (fsm *FSM[T]) ExistEventStateKey(eventStateKey EventStateKey) bool {
 	return ok
 }
 
+func (fsm *FSM[T]) MustGetTransitionStateAndHandler(esk EventStateKey) (FSMState, Handler[T]) {
+	state, handler := fsm.transitions[esk], fsm.handlers[esk]
+
+	return state, handler
+}
+
 func (fsm *FSM[T]) ProcessEvent(event FSMEvent) (TransitionTrace, error) {
 	fsm.eventLock.Lock()
 	defer fsm.eventLock.Unlock()
@@ -187,37 +193,58 @@ func (fsm *FSM[T]) ProcessEvent(event FSMEvent) (TransitionTrace, error) {
 		return transTrace.TrimPtr(), ErrorEventStateKeyInvalid(eventStateKey)
 	}
 
-	toState, handler := fsm.transitions[eventStateKey], fsm.handlers[eventStateKey]
+	toState, handler := fsm.MustGetTransitionStateAndHandler(eventStateKey)
 	transTrace.SetToState(toState)
 
-	if handler.BeforeHandler != nil {
-		err := handler.BeforeHandler(fsm)
-		if err != nil {
-			transTrace.SetFinalState(fsm.currentState).End(err)
-			return transTrace.TrimPtr(), err
-		}
-	}
-
-	if handler.Handler != nil {
-		err := handler.Handler(fsm)
-		if err != nil {
-			transTrace.SetFinalState(fsm.currentState).End(err)
-			return transTrace.TrimPtr(), err
-		}
-	}
-
-	if handler.AfterHandler != nil {
-		handler.AfterHandler(fsm)
+	if err := handler.apply(fsm); err != nil {
+		transTrace.SetFinalState(fsm.currentState).End(err)
+		return transTrace.TrimPtr(), err
 	}
 
 	transTrace.SetFinalState(toState).TransitionSuccess().End()
 
+	fsm.setEnvironment(
+		event,
+		toState,
+		nextTtId,
+	)
+
+	return transTrace.TrimPtr(), nil
+}
+
+func (h Handler[T]) apply(
+	fsm *FSM[T],
+) error {
+	if h.BeforeHandler != nil {
+		err := h.BeforeHandler(fsm)
+		if err != nil {
+			return err
+		}
+	}
+
+	if h.Handler != nil {
+		err := h.Handler(fsm)
+		if err != nil {
+			return err
+		}
+	}
+
+	if h.AfterHandler != nil {
+		h.AfterHandler(fsm)
+	}
+
+	return nil
+}
+
+func (fsm *FSM[T]) setEnvironment(
+	event FSMEvent,
+	toState FSMState,
+	ttId string,
+) {
 	fsm.fromState = fsm.currentState
 	fsm.fromEvent = event
 	fsm.processingEvent = EventEmpty
 
 	fsm.currentState = toState
-	fsm.TtId = nextTtId
-
-	return transTrace.TrimPtr(), nil
+	fsm.TtId = ttId
 }
