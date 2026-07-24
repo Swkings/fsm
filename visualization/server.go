@@ -65,6 +65,9 @@ type Server struct {
 	clients map[chan []byte]struct{}
 	closed  bool
 
+	discoveryMu sync.RWMutex
+	discoveries map[string]*registeredDiscovery
+
 	lifecycleMu sync.Mutex
 	httpServer  *http.Server
 	listener    net.Listener
@@ -78,16 +81,17 @@ func NewServerWithConfig(config ServerConfig) *Server {
 	if address := strings.TrimSpace(config.Address); address != "" {
 		config.Address = address
 	} else {
-		config.Address = "127.0.0.1:0"
+		config.Address = "0.0.0.0:5005"
 	}
 	if config.TraceLimit <= 0 {
 		config.TraceLimit = 100
 	}
 	server := &Server{
-		address:    config.Address,
-		traceLimit: config.TraceLimit,
-		sources:    make(map[string]*registeredClient),
-		clients:    make(map[chan []byte]struct{}),
+		address:     config.Address,
+		traceLimit:  config.TraceLimit,
+		sources:     make(map[string]*registeredClient),
+		clients:     make(map[chan []byte]struct{}),
+		discoveries: make(map[string]*registeredDiscovery),
 	}
 	server.handler = newHTTPHandler(server)
 	return server
@@ -478,6 +482,7 @@ func (server *Server) Close(ctx context.Context) error {
 	for _, source := range registered {
 		stopRegistration(source)
 	}
+	server.stopAllDiscoveries()
 	for _, client := range clients {
 		close(client)
 	}

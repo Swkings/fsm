@@ -17,6 +17,8 @@ func newHTTPHandler(server *Server) http.Handler {
 	mux.HandleFunc("/api/fsms", server.handleFSMList)
 	mux.HandleFunc("/api/fsms/", server.handleFSMDetail)
 	mux.HandleFunc("/api/events", server.handleEvents)
+	mux.HandleFunc("/api/discoveries", server.handleDiscoveries)
+	mux.HandleFunc("/api/discoveries/", server.handleDiscoveryDetail)
 	mux.HandleFunc("/api/push/", server.handlePush)
 	return mux
 }
@@ -196,13 +198,14 @@ func (server *Server) handlePush(writer http.ResponseWriter, request *http.Reque
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": ErrInvalidRegistrationID.Error()})
 		return
 	}
-	var data RealtimeData
+	var wire realtimeDataWire
 	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 4<<20))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&data); err != nil {
+	if err := decoder.Decode(&wire); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	data := wire.realtimeData()
 	if err := server.Push(request.Context(), id, data); err != nil {
 		status := http.StatusConflict
 		if errors.Is(err, ErrRegistrationNotFound) {

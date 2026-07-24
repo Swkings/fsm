@@ -53,7 +53,7 @@ func (worker *externalWorker) VisualizationSnapshot(context.Context) (visualizat
 
 func main() {
 	server := visualization.NewServerWithConfig(visualization.ServerConfig{
-		Address:    "127.0.0.1:0",
+		Address:    "0.0.0.0:5005",
 		TraceLimit: 50,
 	})
 	if err := server.Start(); err != nil {

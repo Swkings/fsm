@@ -14,6 +14,8 @@ go run ./examples/basic
 
 演示统一的 `server.Register(ctx, client, config)` 接口：注册时一次性提交完整 Definition，后续仅通过 push 或 pull 同步 RealtimeData。本库 FSM 直接实现 `PushClient`，第三方状态机实现 `Client` 并由 Server 定时 pull；两者通过 `path` 分入多级文件夹。
 
+可视化 Server 还支持通过 `RegisterDiscovery` 或 Web Header 中的服务发现配置，自动发现远程客户端、读取 Definition、注册 FSM 并持续 pull RealtimeData。
+
 Web 页面以可拖动状态图作为全屏画布，Payload、Trace 和当前可接收事件使用可折叠透明浮层；同时支持文件夹聚合搜索、节点悬浮信息、侧栏折叠、浮层透明度调节、明暗主题切换和状态图 PNG 导出：
 
 ```bash
@@ -21,6 +23,14 @@ go run ./examples/server
 ```
 
 程序会输出本机访问 URL，按 `Ctrl+C` 退出。
+
+## 服务发现与远程 Pull
+
+演示远程客户端通过 `NewClientHandler` 暴露 Definition 和 RealtimeData、HTTP 注册中心返回服务列表，以及可视化 Server 自动发现、注册、主动 pull 和动态渲染：
+
+```bash
+go run ./examples/discovery
+```
 
 ## 异步事件队列
 

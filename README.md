@@ -200,6 +200,67 @@ registration, err := server.Register(ctx, orderFSM, visualization.RegistrationCo
 
 实时 Push 请求如果夹带 `states`、`events` 或 `transitions` 等静态字段会被拒绝，未注册的 ID 也不会被自动创建。
 
+### 服务发现与远程 Pull
+
+Pull 模式可以跨进程工作。远程 FSM 使用 `NewClientHandler` 暴露统一客户端接口：
+
+```go
+mux.Handle(
+    "/fsm/order/",
+    http.StripPrefix("/fsm/order", visualization.NewClientHandler(orderFSM)),
+)
+```
+
+客户端接口为：
+
+- `GET {endpoint}/definition`：返回一次性 `Definition`。
+- `GET {endpoint}/realtime`：返回持续变化的 `RealtimeData`。
+
+可视化 Server 定义了通用服务发现接口，可接入 Consul、Kubernetes、etcd 或其他注册中心：
+
+```go
+type ServiceDiscovery interface {
+    Discover(context.Context) ([]DiscoveredService, error)
+}
+
+discovery, err := server.RegisterDiscovery(
+    ctx,
+    myDiscovery,
+    visualization.DiscoveryConfig{
+        ID:              "production",
+        PathPrefix:      "production/discovered",
+        RefreshInterval: 30 * time.Second,
+        PullInterval:    5 * time.Second,
+    },
+)
+```
+
+内置 `HTTPServiceDiscovery` 会定期请求一个 JSON 服务列表：
+
+```json
+{
+  "services": [
+    {
+      "key": "order-1",
+      "endpoint": "http://order-1:8080/fsm/order",
+      "displayName": "Order 1",
+      "path": "orders",
+      "pullIntervalSeconds": 2
+    }
+  ]
+}
+```
+
+Server 会自动完成以下操作：
+
+- 新发现的服务：调用 `/definition` 获取完整状态图并注册为 pull FSM。
+- 已注册服务：按照 pull 周期调用 `/realtime`，由 Server 主动更新实时数据。
+- 服务地址或配置变化：自动注销旧实例并重新注册。
+- 服务从发现结果中消失：自动注销对应 FSM。
+- 拉取失败：保留静态状态图和最后一次实时数据，并通过 `collectionError` 展示错误。
+
+Web Header 的服务发现图标可以直接配置 HTTP 发现地址、目录前缀、发现周期和 pull 周期，并查看已发现数量、已注册数量和最近错误。对应 API 为 `GET/POST /api/discoveries`、`POST /api/discoveries/{id}/refresh` 和 `DELETE /api/discoveries/{id}`。这些配置会让 Server 访问指定网络地址，公开部署时必须为配置 API 增加鉴权和网络访问限制。
+
 Web 页面实时展示：
 
 - 当前状态、Payload、Trace、全部状态转移和当前可接收事件。

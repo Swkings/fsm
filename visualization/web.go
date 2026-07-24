@@ -394,6 +394,8 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
   .payload-panel { width: min(310px, calc(100% - 24px)); }
   .available-panel { max-width: calc(100% - 24px); right: 12px; }
   .canvas-hint { display: none; }
+  .discovery-form { grid-template-columns: 1fr; }
+  .discovery-field.wide { grid-column: auto; }
 }
 </style>
 </head>
@@ -407,6 +409,9 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
   <div id="sidebarResize" class="resize-handle" role="separator" aria-label="调整状态机列表宽度" aria-orientation="vertical" tabindex="0"></div>
   <main class="workspace">
     <header class="topbar">
+      <button id="discoveryToggle" class="icon-button" type="button" aria-label="服务发现配置" title="服务发现配置">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2"></circle><circle cx="18" cy="6" r="2"></circle><circle cx="18" cy="18" r="2"></circle><path d="M8 11l8-4M8 13l8 4"></path></svg>
+      </button>
       <div id="opacityControl" class="opacity-control">
         <button id="opacityToggle" class="icon-button" type="button" aria-label="调节浮层透明度" title="调节浮层透明度" aria-expanded="false">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s5 6 5 10a5 5 0 0 1-10 0c0-4 5-10 5-10z"></path><path d="M9 14.5c.7 1.3 1.7 2 3 2"></path></svg>
@@ -469,8 +474,27 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
     </div>
   </main>
 </div>
+<div id="discoveryModal" class="discovery-modal" role="dialog" aria-modal="true" aria-labelledby="discoveryTitle">
+  <section class="discovery-card">
+    <div class="discovery-head">
+      <div><strong id="discoveryTitle">服务发现</strong><br><span>由 Server 发现远程 FSM 并主动拉取实时数据</span></div>
+      <button id="discoveryClose" class="icon-button discovery-close" type="button" aria-label="关闭服务发现配置" title="关闭">×</button>
+    </div>
+    <form id="discoveryForm" class="discovery-form">
+      <div class="discovery-field"><label for="discoveryId">配置 ID</label><input id="discoveryId" name="id" required placeholder="production-services"></div>
+      <div class="discovery-field"><label for="discoveryName">显示名称</label><input id="discoveryName" name="name" placeholder="Production Services"></div>
+      <div class="discovery-field wide"><label for="discoveryEndpoint">发现接口地址</label><input id="discoveryEndpoint" name="endpoint" type="url" required placeholder="http://registry:8080/fsm-services"></div>
+      <div class="discovery-field wide"><label for="discoveryPathPrefix">目录前缀</label><input id="discoveryPathPrefix" name="pathPrefix" placeholder="production/discovered"></div>
+      <div class="discovery-field"><label for="discoveryRefresh">发现周期（秒）</label><input id="discoveryRefresh" name="refreshIntervalSeconds" type="number" min="0.1" step="0.1" value="30"></div>
+      <div class="discovery-field"><label for="discoveryPull">Pull 周期（秒）</label><input id="discoveryPull" name="pullIntervalSeconds" type="number" min="0.1" step="0.1" value="5"></div>
+      <button id="discoverySubmit" class="discovery-submit" type="submit">添加发现配置</button>
+      <span id="discoveryFormStatus" class="discovery-form-status"></span>
+    </form>
+    <div id="discoveryList" class="discovery-list"></div>
+  </section>
+</div>
 <script>
-const app={fsms:[],selected:"",query:"",graphOffsets:{}};
+const app={fsms:[],discoveries:[],selected:"",query:"",graphOffsets:{}};
 const byId=id=>document.getElementById(id);
 function readPreference(key){try{return localStorage.getItem(key)||""}catch(error){return ""}}
 function writePreference(key,value){try{if(value==="")localStorage.removeItem(key);else localStorage.setItem(key,value)}catch(error){}}
@@ -869,10 +893,128 @@ function initializeOverlayOpacity(){
   document.addEventListener("pointerdown",event=>{if(!control.contains(event.target))close()});
   document.addEventListener("keydown",event=>{if(event.key==="Escape")close()});
 }
+async function loadDiscoveries(){
+  try{
+    const response=await fetch("/api/discoveries",{cache:"no-store"});
+    if(!response.ok)throw new Error(response.statusText);
+    app.discoveries=await response.json();
+    renderDiscoveries();
+  }catch(error){
+    text("discoveryFormStatus",error.message||String(error));
+    byId("discoveryFormStatus").classList.add("error");
+  }
+}
+function discoveryStatus(message,isError){
+  const status=byId("discoveryFormStatus");
+  status.textContent=message||"";
+  status.classList.toggle("error",Boolean(isError));
+}
+function discoveryAction(label,className,handler){
+  const button=document.createElement("button");
+  button.type="button";
+  button.className="discovery-action"+(className?" "+className:"");
+  button.textContent=label;
+  button.onclick=handler;
+  return button;
+}
+function renderDiscoveries(){
+  const list=byId("discoveryList");
+  list.replaceChildren();
+  if(!app.discoveries.length){
+    const empty=document.createElement("div");
+    empty.className="discovery-empty";
+    empty.textContent="尚未配置服务发现";
+    list.appendChild(empty);
+    return;
+  }
+  for(const item of app.discoveries){
+    const card=document.createElement("article");
+    card.className="discovery-item";
+    const head=document.createElement("div");
+    head.className="discovery-item-head";
+    const dot=document.createElement("span");
+    dot.className="discovery-status-dot"+(item.lastError?" error":"");
+    const name=document.createElement("strong");
+    name.textContent=item.name||item.id;
+    const count=document.createElement("span");
+    count.className="discovery-item-count";
+    count.textContent=String(item.registered||0)+" / "+String(item.discovered||0)+" registered";
+    head.append(dot,name,count);
+    const meta=document.createElement("div");
+    meta.className="discovery-item-meta";
+    meta.textContent=(item.endpoint||"-")+" · every "+item.refreshIntervalSeconds+"s · pull "+item.pullIntervalSeconds+"s"+(item.pathPrefix?" · /"+item.pathPrefix:"");
+    card.append(head,meta);
+    if(item.lastError){
+      const error=document.createElement("div");
+      error.className="discovery-item-error";
+      error.textContent=item.lastError;
+      card.appendChild(error);
+    }
+    const actions=document.createElement("div");
+    actions.className="discovery-actions";
+    actions.append(
+      discoveryAction("立即发现","",()=>refreshDiscovery(item.id)),
+      discoveryAction("删除","danger",()=>deleteDiscovery(item.id))
+    );
+    card.appendChild(actions);
+    list.appendChild(card);
+  }
+}
+async function refreshDiscovery(id){
+  discoveryStatus("正在发现服务…",false);
+  try{
+    const response=await fetch("/api/discoveries/"+encodeURIComponent(id)+"/refresh",{method:"POST"});
+    if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||response.statusText)}
+    discoveryStatus("发现完成",false);
+    await Promise.all([loadDiscoveries(),loadFSMs()]);
+  }catch(error){discoveryStatus(error.message||String(error),true);await loadDiscoveries()}
+}
+async function deleteDiscovery(id){
+  if(!window.confirm("删除服务发现配置 "+id+"？由它注册的 FSM 也会被移除。"))return;
+  try{
+    const response=await fetch("/api/discoveries/"+encodeURIComponent(id),{method:"DELETE"});
+    if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||response.statusText)}
+    discoveryStatus("已删除 "+id,false);
+    await Promise.all([loadDiscoveries(),loadFSMs()]);
+  }catch(error){discoveryStatus(error.message||String(error),true)}
+}
+function closeDiscoveryModal(){byId("discoveryModal").classList.remove("open")}
+function initializeDiscovery(){
+  const modal=byId("discoveryModal");
+  byId("discoveryToggle").onclick=()=>{modal.classList.add("open");loadDiscoveries();byId("discoveryId").focus()};
+  byId("discoveryClose").onclick=closeDiscoveryModal;
+  modal.addEventListener("pointerdown",event=>{if(event.target===modal)closeDiscoveryModal()});
+  document.addEventListener("keydown",event=>{if(event.key==="Escape")closeDiscoveryModal()});
+  byId("discoveryForm").onsubmit=async event=>{
+    event.preventDefault();
+    const submit=byId("discoverySubmit");
+    submit.disabled=true;
+    discoveryStatus("正在创建并执行首次发现…",false);
+    const payload={
+      id:byId("discoveryId").value.trim(),
+      name:byId("discoveryName").value.trim(),
+      endpoint:byId("discoveryEndpoint").value.trim(),
+      pathPrefix:byId("discoveryPathPrefix").value.trim(),
+      refreshIntervalSeconds:Number(byId("discoveryRefresh").value),
+      pullIntervalSeconds:Number(byId("discoveryPull").value)
+    };
+    try{
+      const response=await fetch("/api/discoveries",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||response.statusText)}
+      discoveryStatus("发现配置已启动",false);
+      byId("discoveryId").value="";
+      byId("discoveryName").value="";
+      await Promise.all([loadDiscoveries(),loadFSMs()]);
+    }catch(error){discoveryStatus(error.message||String(error),true)}
+    finally{submit.disabled=false}
+  };
+}
+
 initializeTheme();
 initializeResizableColumns();
 initializeSidebarToggle();
 initializeOverlayOpacity();
+initializeDiscovery();
 initializeFloatingPanels();
 byId("fsmSearch").addEventListener("input",event=>{app.query=event.target.value;renderList()});
 byId("exportGraph").disabled=true;
@@ -880,8 +1022,9 @@ byId("exportGraph").onclick=exportStateGraph;
 const stream=new EventSource("/api/events");
 stream.onopen=()=>{document.body.dataset.connection="online"};
 stream.onerror=()=>{document.body.dataset.connection="offline"};
-stream.onmessage=()=>loadFSMs();
+stream.onmessage=()=>{loadFSMs();loadDiscoveries()};
 loadFSMs();
+loadDiscoveries();
 </script>
 </body>
 </html>`
