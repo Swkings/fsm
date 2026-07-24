@@ -57,7 +57,7 @@ func (worker *externalWorker) Collect(context.Context) (visualization.Snapshot, 
 
 func main() {
 	server := visualization.NewServer(
-		visualization.WithAddress("127.0.0.1:0"),
+		visualization.WithAddress("0.0.0.0:5005"),
 		visualization.WithTraceLimit(50),
 	)
 	if err := server.Start(); err != nil {
