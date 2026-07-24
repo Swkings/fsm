@@ -101,79 +101,97 @@ _ = result
 
 ## 实时可视化 Server
 
-可视化能力已独立封装在 `github.com/swkings/fsm/visualization` 包中，只交换字符串状态、JSON Payload 和通用 Trace，不依赖本库的泛型 FSM 类型。Server 默认不启动，只有显式调用 `Start`、`Serve`，或将 `Handler()` 挂到已有 HTTP Server 时才启用：
+可视化能力位于独立的 `github.com/swkings/fsm/visualization` 包。Server 使用一个普通配置结构创建，不再使用多组 Option：
 
 ```go
-server := visualization.NewServer(
-    visualization.WithAddress("127.0.0.1:0"),
-    visualization.WithTraceLimit(100),
-)
+server := visualization.NewServerWithConfig(visualization.ServerConfig{
+    Address:    "127.0.0.1:0",
+    TraceLimit: 100,
+})
 if err := server.Start(); err != nil {
     return err
 }
 defer server.Close(context.Background())
-fmt.Println(server.URL())
 ```
 
-内置 FSM 采用 push 模式：每次状态转移后主动把快照和增量 Trace 提交给 Server。`path` 使用 `/` 分层，Web 端会按目录聚合和折叠：
+### 注册接口
+
+进程内客户端只有一个注册入口：
 
 ```go
-registration, err := orderFSM.RegisterVisualization(ctx, server,
-    visualization.WithRegistrationID("order-1001"),
-    visualization.WithDisplayName("Order 1001"),
-    visualization.WithPath("production/orders/checkout"),
-)
+registration, err := server.Register(ctx, client)
 defer registration.Unregister()
-
-// 忽略注册错误时，也可使用链式便捷方法。
-vehicleFSM.Register(server, visualization.WithPath("production/vehicles"))
-
-// 也可让 Server 通过统一自注册协议接入内置 FSM。
-registration, err = server.Register(ctx, fsm.FSMVisualizable(orderFSM))
 ```
 
-### 第三方 FSM 接入
-
-第三方实现只需依赖 `visualization.Registrar`。实现 `Registrable` 后，对象可以自行决定注册配置以及使用 pull 或 push 模式：
+Server 定义两个直接接口：
 
 ```go
-func (machine *MyFSM) RegisterVisualization(
+type Client interface {
+    VisualizationConfig() ClientConfig
+    VisualizationSnapshot(context.Context) (Snapshot, error)
+}
+
+type PushClient interface {
+    Client
+    SubscribeVisualization(PublishFunc) func()
+}
+```
+
+- **pull 客户端**只实现 `Client`。Server 注册时立即读取一次快照，之后按照 `ClientConfig.PullInterval` 主动拉取，默认间隔 5 秒。
+- **push 客户端**额外实现 `PushClient`。Server 会传入一个 `PublishFunc`；客户端状态变化时调用它，Server 随后自行读取最新快照。客户端只需返回取消订阅函数。
+- 注册元数据全部放在一个 `ClientConfig` 中，包括 ID、名称、path、模式和 pull 间隔，不再经过注册器回调或 Option 链。
+- 取消注册 context、调用 `Unregister` 或关闭 Server 都会停止 pull/订阅，并关闭 `Registration.Done()`。
+
+第三方 pull FSM 的完整实现只需要两个方法：
+
+```go
+func (machine *MyFSM) VisualizationConfig() visualization.ClientConfig {
+    return visualization.ClientConfig{
+        ID:           machine.ID,
+        Name:         "order",
+        Path:         "region-a/services/orders",
+        Mode:         visualization.ModePull,
+        PullInterval: 3 * time.Second,
+    }
+}
+
+func (machine *MyFSM) VisualizationSnapshot(
     ctx context.Context,
-    registrar visualization.Registrar,
-) (visualization.Registration, error) {
-    return registrar.RegisterPull(ctx, machine,
-        visualization.WithRegistrationID(machine.ID),
-        visualization.WithPath("region-a/services/orders"),
-        visualization.WithPullInterval(3*time.Second),
-    )
+) (visualization.Snapshot, error) {
+    return visualization.Snapshot{
+        CurrentState: machine.State(),
+        Transitions:  machine.Transitions(),
+        Payload:      machine.PayloadJSON(),
+    }, nil
 }
 
 registration, err := server.Register(ctx, machine)
 ```
 
-- **pull 模式**：实现 `PullSource.Descriptor` 和 `PullSource.Collect`，Server 注册时立即采集一次，之后按间隔主动拉取。默认间隔为 5 秒；采集失败会保留上次成功快照并展示错误。
-- **push 模式**：调用 `RegisterPush` 获得 `Pusher`，状态变化时调用 `Push(ctx, snapshot, traces...)`。也可向 `POST /api/push/{id}` 提交 `Snapshot` JSON；首次提交会自动创建 push 注册，适合独立进程或第三方语言接入。
-- **生命周期**：注册使用传入的 `ctx`；取消 context、调用 `Unregister` 或关闭 Server 都会结束注册并关闭 `Registration.Done()`。
-- **Payload**：可直接填写 `Snapshot.Payload`，或使用 `WithPayloadProvider` 统一生成、脱敏并编码 Payload。provider 的编码错误或 panic 会被隔离并显示在页面中。
+内置 `fsm.FSM` 已直接实现 `visualization.PushClient`，只需按需设置展示元数据后注册：
 
-这种模型与 Prometheus 的使用习惯相似：常驻且可被访问的数据源适合 pull；短生命周期任务、跨进程客户端或事件驱动的数据源适合 push。
+```go
+orderFSM.SetVisualizationConfig(visualization.ClientConfig{
+    ID:          "order-1001",
+    DisplayName: "Order 1001",
+    Path:        "production/orders/checkout",
+})
+registration, err := server.Register(ctx, orderFSM)
+```
+
+跨进程客户端仍可向 `POST /api/push/{id}` 提交 `Snapshot` JSON；首次提交会自动创建 push 注册。
 
 Web 页面实时展示：
 
-- 当前状态、上一个状态和事件。
-- Payload JSON 快照及编码错误。
-- SVG 状态图、当前状态高亮，以及正在执行和最近完成的状态转移。
-- 当前状态可接收的 event 及每个 event 对应的目标状态。
-- FSM 按注册 `path` 的 `/` 层级形成可聚合折叠的文件夹树，并支持搜索和折叠状态记忆。
-- 左侧目录树贯穿页面全高，支持调整宽度、折叠/展开并记忆状态；主内容区以实时状态图作为全屏画布，可拖动图形并双击复位。
-- Payload、Trace 和当前可接收事件以透明浮层展示，可独立收起并记忆展开状态；Header 可调节全部浮层透明度，默认透明度为 85%，并同时作用于 Header 和左侧栏背景。
-- 状态节点支持鼠标悬浮或键盘聚焦查看当前/上一状态、进入与离开转移数量，以及可接收事件。
-- 紧凑 Header 只保留明暗主题切换；状态图可按当前主题和高亮状态导出 PNG。
-- 数据来源模式、pull 采集错误和最近更新时间。
-- 成功、失败、取消、过期事件的 Trace、耗时和错误。
-- 运行时动态注册或注销的 FSM。
+- 当前状态、Payload、Trace、全部状态转移和当前可接收事件。
+- FSM 按注册 `path` 的 `/` 层级形成可聚合折叠的文件夹树。
+- 左侧目录树支持调整宽度、折叠/展开并记忆状态。
+- 状态图作为全屏画布，可拖动、双击复位并导出 PNG。
+- 状态节点支持鼠标悬浮或键盘聚焦查看转移信息。
+- Payload、Trace 和事件使用可折叠浮层；Header 可调节浮层、Header 和侧栏透明度，默认 85%。
+- 明暗主题切换、pull 采集错误以及动态注册/注销。
 
-HTTP 接口为 `/api/fsms`、`/api/fsms/{id}`、`POST /api/push/{id}`，实时更新使用 `/api/events` SSE。`Handler()` 可以集成到已有 HTTP 服务。独立启动默认只监听本机；Server 本身不提供鉴权，绑定公网地址时应由应用或反向代理增加认证和访问控制。
+HTTP 接口为 `/api/fsms`、`/api/fsms/{id}`、`POST /api/push/{id}`，实时更新使用 `/api/events` SSE。`Handler()` 可以挂载到已有 HTTP 服务。Server 不提供鉴权，绑定公网地址时应由应用或反向代理增加认证和访问控制。
 
 可运行示例：
 

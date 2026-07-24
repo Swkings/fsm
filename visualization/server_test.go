@@ -22,11 +22,19 @@ type thirdPartyFSM struct {
 	fail      bool
 }
 
-func (machine *thirdPartyFSM) Descriptor() Descriptor {
-	return Descriptor{ID: "third-party-order", Name: "order", DisplayName: "Third-party Order", Description: "external fsm implementation"}
+func (machine *thirdPartyFSM) VisualizationConfig() ClientConfig {
+	return ClientConfig{
+		ID:           "third-party-order",
+		Name:         "order",
+		DisplayName:  "Third-party Order",
+		Description:  "external fsm implementation",
+		Path:         "/production / orders/",
+		Mode:         ModePull,
+		PullInterval: 10 * time.Millisecond,
+	}
 }
 
-func (machine *thirdPartyFSM) Collect(context.Context) (Snapshot, error) {
+func (machine *thirdPartyFSM) VisualizationSnapshot(context.Context) (Snapshot, error) {
 	machine.mu.Lock()
 	defer machine.mu.Unlock()
 	machine.collected++
@@ -48,18 +56,53 @@ func (machine *thirdPartyFSM) Collect(context.Context) (Snapshot, error) {
 	}, nil
 }
 
-func (machine *thirdPartyFSM) RegisterVisualization(ctx context.Context, registrar Registrar) (Registration, error) {
-	return registrar.RegisterPull(ctx, machine, WithPath("/production / orders/"), WithPullInterval(10*time.Millisecond))
-}
-
 func (machine *thirdPartyFSM) collectCount() int {
 	machine.mu.Lock()
 	defer machine.mu.Unlock()
 	return machine.collected
 }
 
-func TestServerRegistersThirdPartyFSMAndPullsPeriodically(t *testing.T) {
-	server := NewServer(WithTraceLimit(2))
+type testPushClient struct {
+	mu           sync.Mutex
+	config       ClientConfig
+	snapshot     Snapshot
+	publish      PublishFunc
+	unsubscribed bool
+}
+
+func (client *testPushClient) VisualizationConfig() ClientConfig { return client.config }
+
+func (client *testPushClient) VisualizationSnapshot(context.Context) (Snapshot, error) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	return cloneSnapshot(client.snapshot), nil
+}
+
+func (client *testPushClient) SubscribeVisualization(publish PublishFunc) func() {
+	client.mu.Lock()
+	client.publish = publish
+	client.mu.Unlock()
+	return func() {
+		client.mu.Lock()
+		client.publish = nil
+		client.unsubscribed = true
+		client.mu.Unlock()
+	}
+}
+
+func (client *testPushClient) update(snapshot Snapshot, traces ...TraceSnapshot) error {
+	client.mu.Lock()
+	client.snapshot = snapshot
+	publish := client.publish
+	client.mu.Unlock()
+	if publish == nil {
+		return errors.New("push client is not subscribed")
+	}
+	return publish(traces...)
+}
+
+func TestServerRegistersPullClientDirectly(t *testing.T) {
+	server := NewServerWithConfig(ServerConfig{TraceLimit: 2})
 	defer server.Close(context.Background())
 
 	machine := &thirdPartyFSM{}
@@ -105,23 +148,27 @@ func TestServerRegistersThirdPartyFSMAndPullsPeriodically(t *testing.T) {
 	}
 }
 
-func TestServerPushModeStoresIncrementalTracesAndPath(t *testing.T) {
-	server := NewServer(WithTraceLimit(2))
+func TestServerRegistersPushClientAndStoresIncrementalTraces(t *testing.T) {
+	server := NewServerWithConfig(ServerConfig{TraceLimit: 2})
 	defer server.Close(context.Background())
 
-	pusher, err := server.RegisterPush(
-		context.Background(),
-		Descriptor{ID: "worker-7", Name: "worker"},
-		WithDisplayName("Worker 7"),
-		WithPath("region-a / workers"),
-	)
+	client := &testPushClient{
+		config: ClientConfig{
+			ID:          "worker-7",
+			Name:        "worker",
+			DisplayName: "Worker 7",
+			Path:        "region-a / workers",
+			Mode:        ModePush,
+		},
+		snapshot: Snapshot{
+			CurrentState: "idle",
+			Payload:      json.RawMessage(`{"job":7}`),
+			Transitions:  []TransitionSnapshot{{FromState: "idle", Event: "run", ToState: "running"}},
+		},
+	}
+	registration, err := server.Register(context.Background(), client)
 	if err != nil {
 		t.Fatal(err)
-	}
-	snapshot := Snapshot{
-		CurrentState: "idle",
-		Payload:      json.RawMessage("{\"job\":7}"),
-		Transitions:  []TransitionSnapshot{{FromState: "idle", Event: "run", ToState: "running"}},
 	}
 	for index := 0; index < 3; index++ {
 		trace := TraceSnapshot{
@@ -132,11 +179,11 @@ func TestServerPushModeStoresIncrementalTracesAndPath(t *testing.T) {
 			FinalState:   "running",
 			Success:      true,
 		}
-		if err := pusher.Push(context.Background(), snapshot, trace); err != nil {
+		if err := client.update(client.snapshot, trace); err != nil {
 			t.Fatal(err)
 		}
 	}
-	stored, exists := server.Snapshot(pusher.ID())
+	stored, exists := server.Snapshot(registration.ID())
 	if !exists {
 		t.Fatal("push snapshot not found")
 	}
@@ -149,6 +196,13 @@ func TestServerPushModeStoresIncrementalTracesAndPath(t *testing.T) {
 	}
 	if len(stored.AvailableTransitions) != 1 || stored.AvailableTransitions[0].ToState != "running" {
 		t.Fatalf("push topology = %+v", stored)
+	}
+	registration.Unregister()
+	client.mu.Lock()
+	unsubscribed := client.unsubscribed
+	client.mu.Unlock()
+	if !unsubscribed {
+		t.Fatal("push client unsubscribe was not called")
 	}
 }
 
@@ -205,7 +259,7 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 		t.Fatalf("first SSE event = %+v", event)
 	}
 
-	body := []byte("{\"name\":\"remote\",\"displayName\":\"Remote FSM\",\"path\":\"external/team-a\",\"currentState\":\"ready\",\"transitions\":[{\"fromState\":\"ready\",\"event\":\"run\",\"toState\":\"busy\"}],\"payload\":{\"source\":\"http\"}}")
+	body := []byte(`{"name":"remote","displayName":"Remote FSM","path":"external/team-a","currentState":"ready","transitions":[{"fromState":"ready","event":"run","toState":"busy"}],"payload":{"source":"http"}}`)
 	response, err = http.Post(httpServer.URL+"/api/push/remote-1", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -237,46 +291,48 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 	}
 }
 
+type configuredClient struct {
+	config   ClientConfig
+	snapshot Snapshot
+}
+
+func (client *configuredClient) VisualizationConfig() ClientConfig { return client.config }
+
+func (client *configuredClient) VisualizationSnapshot(context.Context) (Snapshot, error) {
+	return client.snapshot, nil
+}
+
 func TestServerRegistrationValidationAndModeIsolation(t *testing.T) {
 	server := NewServer()
 	defer server.Close(context.Background())
 
-	var nilSource *thirdPartyFSM
-	if _, err := server.RegisterPull(context.Background(), nilSource); !errors.Is(err, ErrInvalidSource) {
-		t.Fatalf("typed nil pull source error = %v", err)
+	var nilClient *configuredClient
+	if _, err := server.Register(context.Background(), nilClient); !errors.Is(err, ErrInvalidClient) {
+		t.Fatalf("typed nil client error = %v", err)
 	}
-	var nilTarget *thirdPartyFSM
-	if _, err := server.Register(context.Background(), nilTarget); !errors.Is(err, ErrInvalidSource) {
-		t.Fatalf("typed nil registrable error = %v", err)
-	}
-	if _, err := server.RegisterPush(context.Background(), Descriptor{ID: "invalid/path"}); !errors.Is(err, ErrInvalidRegistrationID) {
+	if _, err := server.Register(context.Background(), &configuredClient{
+		config: ClientConfig{ID: "invalid/path"},
+	}); !errors.Is(err, ErrInvalidRegistrationID) {
 		t.Fatalf("invalid id error = %v", err)
 	}
-	if _, err := server.RegisterPush(
-		context.Background(),
-		Descriptor{ID: "invalid-path"},
-		WithPath("a//b"),
-	); !errors.Is(err, ErrInvalidPath) {
+	if _, err := server.Register(context.Background(), &configuredClient{
+		config: ClientConfig{ID: "invalid-path", Path: "a//b"},
+	}); !errors.Is(err, ErrInvalidPath) {
 		t.Fatalf("invalid path error = %v", err)
 	}
-	pusher, err := server.RegisterPush(context.Background(), Descriptor{ID: "same"})
-	if err != nil {
+	first := &configuredClient{config: ClientConfig{ID: "same"}}
+	if _, err := server.Register(context.Background(), first); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.RegisterPush(context.Background(), Descriptor{ID: "same"}); !errors.Is(err, ErrRegistrationIDRepeated) {
+	if _, err := server.Register(context.Background(), &configuredClient{
+		config: ClientConfig{ID: "same"},
+	}); !errors.Is(err, ErrRegistrationIDRepeated) {
 		t.Fatalf("duplicate id error = %v", err)
 	}
-
-	pullRegistration, err := server.RegisterPull(
-		context.Background(),
-		PullSourceFunc{
-			Meta: Descriptor{ID: "pull-only"},
-			CollectFunc: func(context.Context) (Snapshot, error) {
-				return Snapshot{CurrentState: "ok"}, nil
-			},
-		},
-		WithPullInterval(time.Hour),
-	)
+	pullRegistration, err := server.Register(context.Background(), &configuredClient{
+		config:   ClientConfig{ID: "pull-only", Mode: ModePull, PullInterval: time.Hour},
+		snapshot: Snapshot{CurrentState: "ok"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,13 +342,15 @@ func TestServerRegistrationValidationAndModeIsolation(t *testing.T) {
 	if err := server.Push(context.Background(), "missing", Snapshot{}); !errors.Is(err, ErrRegistrationNotFound) {
 		t.Fatalf("push missing registration error = %v", err)
 	}
-	if err := pusher.Push(context.Background(), Snapshot{CurrentState: "ok"}); err != nil {
-		t.Fatal(err)
+	if _, err := server.Register(context.Background(), &configuredClient{
+		config: ClientConfig{ID: "wrong-push", Mode: ModePush},
+	}); !errors.Is(err, ErrInvalidClient) {
+		t.Fatalf("push mode without PushClient error = %v", err)
 	}
 }
 
 func TestServerStartAndClose(t *testing.T) {
-	server := NewServer(WithAddress("127.0.0.1:0"))
+	server := NewServerWithConfig(ServerConfig{Address: "127.0.0.1:0"})
 	if err := server.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +369,11 @@ func TestServerStartAndClose(t *testing.T) {
 		t.Fatalf("second Start error = %v", err)
 	}
 
-	pusher, err := server.RegisterPush(context.Background(), Descriptor{ID: "close-me"})
+	client := &testPushClient{
+		config:   ClientConfig{ID: "close-me", Mode: ModePush},
+		snapshot: Snapshot{CurrentState: "idle"},
+	}
+	registration, err := server.Register(context.Background(), client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,30 +383,35 @@ func TestServerStartAndClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	select {
-	case <-pusher.Done():
+	case <-registration.Done():
 	case <-time.After(time.Second):
-		t.Fatal("pusher Done was not closed")
+		t.Fatal("registration Done was not closed")
 	}
 	if err := server.Start(); !errors.Is(err, ErrServerClosed) {
 		t.Fatalf("Start after Close error = %v", err)
 	}
 }
 
-func TestRegistrationContextCancellationAndPullPanicIsolation(t *testing.T) {
+type panicClient struct{}
+
+func (*panicClient) VisualizationConfig() ClientConfig {
+	return ClientConfig{ID: "panic-source", Mode: ModePull, PullInterval: time.Hour}
+}
+
+func (*panicClient) VisualizationSnapshot(context.Context) (Snapshot, error) {
+	panic("third-party failure")
+}
+
+func TestRegistrationContextCancellationAndSnapshotPanicIsolation(t *testing.T) {
 	server := NewServer()
 	ctx, cancel := context.WithCancel(context.Background())
-	registration, err := server.RegisterPull(ctx, PullSourceFunc{
-		Meta: Descriptor{ID: "panic-source"},
-		CollectFunc: func(context.Context) (Snapshot, error) {
-			panic("third-party failure")
-		},
-	}, WithPullInterval(time.Hour))
+	registration, err := server.Register(ctx, &panicClient{})
 	if err != nil {
-		t.Fatalf("register panic source: %v", err)
+		t.Fatalf("register panic client: %v", err)
 	}
 	snapshot, ok := server.Snapshot("panic-source")
 	if !ok || !strings.Contains(snapshot.CollectionError, "third-party failure") {
-		t.Fatalf("pull panic was not isolated: %+v, found=%v", snapshot, ok)
+		t.Fatalf("snapshot panic was not isolated: %+v, found=%v", snapshot, ok)
 	}
 
 	cancel()

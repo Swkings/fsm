@@ -17,32 +17,26 @@ type doorPayload struct {
 	OpenCount int    `json:"openCount"`
 }
 
-// externalWorker 演示一个不依赖 fsm 包实现的第三方状态机。
-// 它通过实现 visualization.Registrable 决定以 pull 模式接入 Server。
+// externalWorker 不依赖 fsm.FSM，只需直接实现 visualization.Client。
 type externalWorker struct {
 	mu       sync.RWMutex
 	state    string
 	progress int
 }
 
-func (worker *externalWorker) RegisterVisualization(
-	ctx context.Context,
-	registrar visualization.Registrar,
-) (visualization.Registration, error) {
-	return registrar.RegisterPull(ctx, worker,
-		visualization.WithRegistrationID("external-worker"),
-		visualization.WithDisplayName("Third-party Worker"),
-		visualization.WithDescription("A third-party FSM collected by the server"),
-		visualization.WithPath("production/workers/external"),
-		visualization.WithPullInterval(time.Second),
-	)
+func (worker *externalWorker) VisualizationConfig() visualization.ClientConfig {
+	return visualization.ClientConfig{
+		ID:           "external-worker",
+		Name:         "worker",
+		DisplayName:  "Third-party Worker",
+		Description:  "A third-party FSM collected by the server",
+		Path:         "production/workers/external",
+		Mode:         visualization.ModePull,
+		PullInterval: time.Second,
+	}
 }
 
-func (worker *externalWorker) Descriptor() visualization.Descriptor {
-	return visualization.Descriptor{ID: "external-worker", Name: "worker"}
-}
-
-func (worker *externalWorker) Collect(context.Context) (visualization.Snapshot, error) {
+func (worker *externalWorker) VisualizationSnapshot(context.Context) (visualization.Snapshot, error) {
 	worker.mu.RLock()
 	defer worker.mu.RUnlock()
 	return visualization.Snapshot{
@@ -56,10 +50,10 @@ func (worker *externalWorker) Collect(context.Context) (visualization.Snapshot, 
 }
 
 func main() {
-	server := visualization.NewServer(
-		visualization.WithAddress("0.0.0.0:5005"),
-		visualization.WithTraceLimit(50),
-	)
+	server := visualization.NewServerWithConfig(visualization.ServerConfig{
+		Address:    "127.0.0.1:0",
+		TraceLimit: 50,
+	})
 	if err := server.Start(); err != nil {
 		panic(err)
 	}
@@ -75,15 +69,16 @@ func main() {
 		}}),
 		fsm.NewTransitionItem[doorPayload]("close", "opened", "closed", fsm.Handler[doorPayload]{}),
 	)
-	registration, err := door.RegisterVisualization(context.Background(), server,
-		visualization.WithRegistrationID("warehouse-door"),
-		visualization.WithDisplayName("Warehouse Door"),
-		visualization.WithPath("production/warehouse/doors"),
-	)
+	door.SetVisualizationConfig(visualization.ClientConfig{
+		ID:          "warehouse-door",
+		DisplayName: "Warehouse Door",
+		Path:        "production/warehouse/doors",
+	})
+	doorRegistration, err := server.Register(context.Background(), door)
 	if err != nil {
 		panic(err)
 	}
-	defer registration.Unregister()
+	defer doorRegistration.Unregister()
 
 	worker := &externalWorker{state: "idle"}
 	workerRegistration, err := server.Register(context.Background(), worker)

@@ -1,7 +1,7 @@
 // Package visualization 提供与具体状态机实现无关的运行时可视化协议和 Server。
 //
-// 第三方状态机只需实现 PullSource 或 Registrable，无需依赖 github.com/swkings/fsm
-// 的泛型类型。客户端也可以通过 RegisterPush 获得 Pusher，主动提交快照。
+// 第三方状态机只需直接实现 Client；需要主动推送更新时再实现 PushClient。
+// 注册元数据由 ClientConfig 一次性声明，客户端实现接口后即可直接注册。
 package visualization
 
 import (
@@ -18,33 +18,50 @@ var (
 	ErrServerStarted = errors.New("visualization server already started")
 	// ErrServerClosed 表示可视化 Server 已关闭。
 	ErrServerClosed = errors.New("visualization server is closed")
-	// ErrInvalidSource 表示 pull source 或自注册对象无效。
-	ErrInvalidSource = errors.New("invalid visualization source")
+	// ErrInvalidClient 表示注册对象没有正确实现 Client。
+	ErrInvalidClient = errors.New("invalid visualization client")
 	// ErrInvalidRegistrationID 表示注册 ID 为空或包含路径分隔符。
 	ErrInvalidRegistrationID = errors.New("invalid visualization registration id")
 	// ErrRegistrationIDRepeated 表示注册 ID 已被其他实例占用。
 	ErrRegistrationIDRepeated = errors.New("visualization registration id is repeated")
 	// ErrInvalidPath 表示注册目录 path 不符合以 / 分层的规则。
 	ErrInvalidPath = errors.New("invalid visualization registration path")
-	// ErrNilPayloadProvider 表示自定义 Payload 快照函数为 nil。
-	ErrNilPayloadProvider = errors.New("visualization payload provider is nil")
 	// ErrRegistrationNotFound 表示指定注册不存在。
 	ErrRegistrationNotFound = errors.New("visualization registration not found")
 	// ErrRegistrationMode 表示在错误的采集模式下执行了操作。
 	ErrRegistrationMode = errors.New("visualization registration mode mismatch")
 )
 
-// Mode 表示 Server 获取状态机数据的方式。
+// Mode 表示 Server 获取客户端更新的方式。
 type Mode string
 
 const (
-	// ModePull 由 Server 按配置周期主动调用 PullSource.Collect。
+	// ModePull 由 Server 按 ClientConfig.PullInterval 周期调用客户端。
 	ModePull Mode = "pull"
-	// ModePush 由客户端通过 Pusher.Push 主动提交快照。
+	// ModePush 由客户端在状态变化时调用 Server 提供的 PublishFunc。
 	ModePush Mode = "push"
 )
 
-// Descriptor 描述一个可注册的状态机实例，不包含运行时易变数据。
+// ServerConfig 是 Server 的全部启动配置。零值使用安全默认值。
+type ServerConfig struct {
+	// Address 是 Start 使用的监听地址，默认 127.0.0.1:0。
+	Address string
+	// TraceLimit 是每个实例保留的最近 trace 数量，默认 100。
+	TraceLimit int
+}
+
+// ClientConfig 是客户端注册时一次性返回的元数据和工作模式。
+type ClientConfig struct {
+	ID           string
+	Name         string
+	DisplayName  string
+	Description  string
+	Path         string
+	Mode         Mode
+	PullInterval time.Duration
+}
+
+// Descriptor 描述一个已注册状态机实例，不包含运行时易变数据。
 type Descriptor struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -52,6 +69,17 @@ type Descriptor struct {
 	Description string `json:"describe,omitempty"`
 	// Path 使用 / 分隔目录层级，例如 production/order/checkout。
 	Path string `json:"path,omitempty"`
+}
+
+// Descriptor 返回可写入 Snapshot 的稳定描述信息。
+func (config ClientConfig) Descriptor() Descriptor {
+	return Descriptor{
+		ID:          config.ID,
+		Name:        config.Name,
+		DisplayName: config.DisplayName,
+		Description: config.Description,
+		Path:        config.Path,
+	}
 }
 
 // TransitionSnapshot 是一条与具体 FSM 类型无关的状态转移边。
@@ -77,7 +105,7 @@ type TraceSnapshot struct {
 }
 
 // Snapshot 是 Web/API 使用的统一状态机视图。
-// PullSource 和 push 客户端都通过该结构与 Server 交换数据。
+// 客户端只需要填写运行时字段；Server 会覆盖 Descriptor、Mode 和 UpdatedAt 默认值。
 type Snapshot struct {
 	Descriptor
 	Mode                 Mode                 `json:"mode"`
@@ -96,122 +124,65 @@ type Snapshot struct {
 	UpdatedAt            time.Time            `json:"updatedAt"`
 }
 
-// PullSource 是 pull 模式的数据源。Descriptor 必须稳定，Collect 应尊重 ctx 取消。
-type PullSource interface {
-	Descriptor() Descriptor
-	Collect(context.Context) (Snapshot, error)
+// Client 是 Server 定义的唯一基础注册接口。
+// pull 客户端只需实现这两个方法，然后调用 server.Register(ctx, client)。
+type Client interface {
+	VisualizationConfig() ClientConfig
+	VisualizationSnapshot(context.Context) (Snapshot, error)
 }
 
-// PullSourceFunc 便于用函数快速接入 pull 模式。
-type PullSourceFunc struct {
-	Meta        Descriptor
-	CollectFunc func(context.Context) (Snapshot, error)
+// PublishFunc 通知 Server 客户端已经变化。Server 收到通知后会重新获取 Snapshot。
+// traces 只传本次变化产生的增量记录。
+type PublishFunc func(...TraceSnapshot) error
+
+// PushClient 在 Client 基础上增加状态变化订阅。
+// Server 注册时传入 PublishFunc，客户端返回取消订阅函数即可。
+type PushClient interface {
+	Client
+	SubscribeVisualization(PublishFunc) func()
 }
 
-// Descriptor 返回函数数据源的稳定描述信息。
-func (source PullSourceFunc) Descriptor() Descriptor { return source.Meta }
-
-// Collect 调用 CollectFunc 获取快照。
-func (source PullSourceFunc) Collect(ctx context.Context) (Snapshot, error) {
-	if source.CollectFunc == nil {
-		return Snapshot{}, ErrInvalidSource
+func normalizeClientConfig(config ClientConfig, supportsPush bool) (ClientConfig, error) {
+	config.ID = strings.TrimSpace(config.ID)
+	if config.ID == "" || strings.ContainsAny(config.ID, "/\\") {
+		return ClientConfig{}, fmt.Errorf("%w: %q", ErrInvalidRegistrationID, config.ID)
 	}
-	return source.CollectFunc(ctx)
-}
-
-// Registration 表示一个活动注册，可用于获取 ID、模式、生命周期或动态注销。
-type Registration interface {
-	ID() string
-	Mode() Mode
-	Done() <-chan struct{}
-	Unregister() bool
-}
-
-// Pusher 是 push 模式注册句柄。traces 参数是本次更新产生的增量 trace；
-// Snapshot.Traces 非 nil 时则视为客户端提供的完整 trace 历史。
-type Pusher interface {
-	Registration
-	Push(context.Context, Snapshot, ...TraceSnapshot) error
-}
-
-// Registrar 是第三方接入只需依赖的注册接口。
-// 自定义 Server 或测试替身也可以实现该接口。
-type Registrar interface {
-	RegisterPull(context.Context, PullSource, ...RegistrationOption) (Registration, error)
-	RegisterPush(context.Context, Descriptor, ...RegistrationOption) (Pusher, error)
-}
-
-// Registrable 让一个类型拥有自己的注册方式。Server.Register 会回调该方法，
-// 实现方可在内部自行选择 pull 或 push 模式及注册配置。
-type Registrable interface {
-	RegisterVisualization(context.Context, Registrar) (Registration, error)
-}
-
-// RegistrationOption 配置单个注册实例。
-type RegistrationOption func(*registrationConfig) error
-
-type registrationConfig struct {
-	descriptor      Descriptor
-	pullInterval    time.Duration
-	payloadProvider func() any
-}
-
-func defaultRegistrationConfig(descriptor Descriptor) registrationConfig {
-	return registrationConfig{descriptor: descriptor, pullInterval: 5 * time.Second}
-}
-
-// WithRegistrationID 覆盖数据源声明的稳定注册 ID。
-func WithRegistrationID(id string) RegistrationOption {
-	return func(config *registrationConfig) error {
-		config.descriptor.ID = id
-		return nil
+	config.Name = strings.TrimSpace(config.Name)
+	if config.Name == "" {
+		config.Name = config.ID
 	}
-}
-
-// WithDisplayName 设置 Web 页面显示名称。
-func WithDisplayName(name string) RegistrationOption {
-	return func(config *registrationConfig) error {
-		config.descriptor.DisplayName = strings.TrimSpace(name)
-		return nil
+	config.DisplayName = strings.TrimSpace(config.DisplayName)
+	if config.DisplayName == "" {
+		config.DisplayName = config.Name
 	}
-}
-
-// WithDescription 设置实例说明。
-func WithDescription(description string) RegistrationOption {
-	return func(config *registrationConfig) error {
-		config.descriptor.Description = strings.TrimSpace(description)
-		return nil
+	config.Description = strings.TrimSpace(config.Description)
+	path, err := NormalizePath(config.Path)
+	if err != nil {
+		return ClientConfig{}, err
 	}
-}
-
-// WithPath 设置多级目录路径，使用 / 分隔，例如 production/order/checkout。
-func WithPath(path string) RegistrationOption {
-	return func(config *registrationConfig) error {
-		config.descriptor.Path = path
-		return nil
-	}
-}
-
-// WithPullInterval 设置 pull 模式采集间隔。默认 5 秒。
-func WithPullInterval(interval time.Duration) RegistrationOption {
-	return func(config *registrationConfig) error {
-		if interval <= 0 {
-			return fmt.Errorf("%w: pull interval must be positive", ErrInvalidSource)
+	config.Path = path
+	if config.Mode == "" {
+		if supportsPush {
+			config.Mode = ModePush
+		} else {
+			config.Mode = ModePull
 		}
-		config.pullInterval = interval
-		return nil
 	}
-}
-
-// WithPayloadProvider 设置统一的 Payload 快照函数，可用于脱敏或处理无法 JSON 编码的数据。
-func WithPayloadProvider(provider func() any) RegistrationOption {
-	return func(config *registrationConfig) error {
-		if provider == nil {
-			return ErrNilPayloadProvider
+	if config.Mode != ModePull && config.Mode != ModePush {
+		return ClientConfig{}, fmt.Errorf("%w: unsupported mode %q", ErrRegistrationMode, config.Mode)
+	}
+	if config.Mode == ModePush && !supportsPush {
+		return ClientConfig{}, fmt.Errorf("%w: client does not implement PushClient", ErrInvalidClient)
+	}
+	if config.Mode == ModePull {
+		if config.PullInterval < 0 {
+			return ClientConfig{}, fmt.Errorf("%w: pull interval must not be negative", ErrInvalidClient)
 		}
-		config.payloadProvider = provider
-		return nil
+		if config.PullInterval == 0 {
+			config.PullInterval = 5 * time.Second
+		}
 	}
+	return config, nil
 }
 
 // NormalizePath 校验并规范化以 / 分层的注册路径。
@@ -233,64 +204,6 @@ func NormalizePath(path string) (string, error) {
 		segments[index] = segment
 	}
 	return strings.Join(segments, "/"), nil
-}
-
-func applyRegistrationOptions(descriptor Descriptor, options []RegistrationOption) (registrationConfig, error) {
-	config := defaultRegistrationConfig(descriptor)
-	for _, option := range options {
-		if option == nil {
-			continue
-		}
-		if err := option(&config); err != nil {
-			return registrationConfig{}, err
-		}
-	}
-	config.descriptor.ID = strings.TrimSpace(config.descriptor.ID)
-	if config.descriptor.ID == "" || strings.ContainsAny(config.descriptor.ID, "/\\") {
-		return registrationConfig{}, fmt.Errorf("%w: %q", ErrInvalidRegistrationID, config.descriptor.ID)
-	}
-	config.descriptor.Name = strings.TrimSpace(config.descriptor.Name)
-	if config.descriptor.Name == "" {
-		config.descriptor.Name = config.descriptor.ID
-	}
-	config.descriptor.DisplayName = strings.TrimSpace(config.descriptor.DisplayName)
-	if config.descriptor.DisplayName == "" {
-		config.descriptor.DisplayName = config.descriptor.Name
-	}
-	path, err := NormalizePath(config.descriptor.Path)
-	if err != nil {
-		return registrationConfig{}, err
-	}
-	config.descriptor.Path = path
-	return config, nil
-}
-
-func marshalPayload(value any) (payload json.RawMessage, payloadError string) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			payloadError = "payload snapshot panic: " + fmt.Sprint(recovered)
-			payload, _ = json.Marshal(map[string]string{"error": payloadError})
-		}
-	}()
-	data, err := json.Marshal(value)
-	if err == nil {
-		return data, ""
-	}
-	fallback, _ := json.Marshal(map[string]string{
-		"error": err.Error(),
-		"value": fmt.Sprintf("%+v", value),
-	})
-	return fallback, err.Error()
-}
-
-func snapshotPayload(provider func() any) (payload json.RawMessage, payloadError string) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			payloadError = "payload provider panic: " + fmt.Sprint(recovered)
-			payload, _ = json.Marshal(map[string]string{"error": payloadError})
-		}
-	}()
-	return marshalPayload(provider())
 }
 
 func cloneSnapshot(snapshot Snapshot) Snapshot {

@@ -149,6 +149,10 @@ type (
 		configLock sync.RWMutex
 		// runtimeObserverLock 保护可视化 Server 注册的运行时观察器。
 		runtimeObserverLock sync.RWMutex
+		// visualizationClientLock 保护可视化客户端注册配置。
+		visualizationClientLock sync.RWMutex
+		// visualizationClientConfig 保存该 FSM 对外声明的可视化元数据。
+		visualizationClientConfig fsmVisualizationConfig
 		// runtimeObservers 在事件完成后接收 trace 或快照更新通知。
 		runtimeObservers map[string]func(*TransitionTrace)
 	}

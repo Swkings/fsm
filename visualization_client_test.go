@@ -8,25 +8,31 @@ import (
 	"github.com/swkings/fsm/visualization"
 )
 
-func TestFSMRegisterVisualizationPushesRuntimeUpdates(t *testing.T) {
-	server := visualization.NewServer(visualization.WithTraceLimit(2))
-	machine := NewFSM("door", FSMState("closed"), &struct {
-		Count int `json:"count"`
-	}{})
-	defer machine.Close()
-	machine.SetTransitions(NewTransitionItem("open", "closed", "opened", Handler[struct {
-		Count int `json:"count"`
-	}]{Handler: func(current *FSM[struct {
-		Count int `json:"count"`
-	}]) error {
-		current.Payload.Count++
-		return nil
-	}}))
+type visualizationTestPayload struct {
+	Count int `json:"count"`
+}
 
-	registration, err := machine.RegisterVisualization(context.Background(), server,
-		visualization.WithRegistrationID("door-1"),
-		visualization.WithPath("production/doors"),
-	)
+func TestFSMImplementsPushClientDirectly(t *testing.T) {
+	server := visualization.NewServerWithConfig(visualization.ServerConfig{TraceLimit: 2})
+	machine := NewFSM("door", FSMState("closed"), &visualizationTestPayload{})
+	defer machine.Close()
+	machine.SetTransitions(NewTransitionItem(
+		"open",
+		"closed",
+		"opened",
+		Handler[visualizationTestPayload]{Handler: func(current *FSM[visualizationTestPayload]) error {
+			current.Payload.Count++
+			return nil
+		}},
+	))
+	machine.SetVisualizationConfig(visualization.ClientConfig{
+		ID:          "door-1",
+		DisplayName: "Warehouse Door",
+		Path:        "production/doors",
+	})
+
+	var client visualization.PushClient = machine
+	registration, err := server.Register(context.Background(), client)
 	if err != nil {
 		t.Fatalf("register FSM: %v", err)
 	}
@@ -64,22 +70,21 @@ func TestFSMRegisterVisualizationPushesRuntimeUpdates(t *testing.T) {
 	}
 }
 
-func TestFSMVisualizableUsesServerRegistrationProtocol(t *testing.T) {
+func TestFSMUsesDefaultVisualizationConfig(t *testing.T) {
 	server := visualization.NewServer()
 	machine := NewFSM("job", FSMState("idle"), &struct{}{})
 	defer machine.Close()
 
-	registration, err := server.Register(context.Background(), FSMVisualizable(machine,
-		visualization.WithRegistrationID("job-1"),
-		visualization.WithPath("jobs/runtime"),
-	))
+	registration, err := server.Register(context.Background(), machine)
 	if err != nil {
-		t.Fatalf("register visualizable FSM: %v", err)
+		t.Fatalf("register FSM: %v", err)
 	}
 	defer registration.Unregister()
-
-	snapshot, ok := server.Snapshot("job-1")
-	if !ok || snapshot.Path != "jobs/runtime" || snapshot.CurrentState != "idle" {
+	if registration.ID() == "" {
+		t.Fatal("default registration ID is empty")
+	}
+	snapshot, ok := server.Snapshot(registration.ID())
+	if !ok || snapshot.Name != "job" || snapshot.CurrentState != "idle" {
 		t.Fatalf("unexpected snapshot: %+v, found=%v", snapshot, ok)
 	}
 }

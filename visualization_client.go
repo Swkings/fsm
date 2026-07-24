@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"sort"
 	"sync"
 	"time"
@@ -13,135 +12,97 @@ import (
 	"github.com/swkings/fsm/visualization"
 )
 
-// RegisterVisualization 以 push 模式把当前 FSM 注册到任意 visualization.Registrar。
-// 返回的 Registration 可用于动态注销；Server 关闭时注册的运行时观察器会自动解除。
-func (fsm *FSM[T]) RegisterVisualization(
-	ctx context.Context,
-	registrar visualization.Registrar,
-	options ...visualization.RegistrationOption,
-) (visualization.Registration, error) {
-	if fsm == nil || isNilVisualizationRegistrar(registrar) {
-		return nil, visualization.ErrInvalidSource
+type fsmVisualizationConfig struct {
+	id          string
+	name        string
+	displayName string
+	description string
+	path        string
+}
+
+// SetVisualizationConfig 设置当前 FSM 注册到可视化 Server 时使用的元数据。
+// FSM 固定采用 push 模式，因此会忽略 config.Mode 和 config.PullInterval。
+func (fsm *FSM[T]) SetVisualizationConfig(config visualization.ClientConfig) *FSM[T] {
+	if fsm == nil {
+		return fsm
+	}
+	fsm.visualizationClientLock.Lock()
+	fsm.visualizationClientConfig = fsmVisualizationConfig{
+		id:          config.ID,
+		name:        config.Name,
+		displayName: config.DisplayName,
+		description: config.Description,
+		path:        config.Path,
+	}
+	fsm.visualizationClientLock.Unlock()
+	return fsm
+}
+
+// VisualizationConfig 使 FSM 直接实现 visualization.Client。
+// 未显式设置的字段会使用 FSM 自身的实例 ID、名称和描述。
+func (fsm *FSM[T]) VisualizationConfig() visualization.ClientConfig {
+	if fsm == nil {
+		return visualization.ClientConfig{}
+	}
+	fsm.visualizationClientLock.RLock()
+	config := fsm.visualizationClientConfig
+	fsm.visualizationClientLock.RUnlock()
+
+	fsm.stateLock.RLock()
+	defaultID := fsm.instanceID
+	defaultName := string(fsm.Name)
+	defaultDescription := fsm.Describe
+	fsm.stateLock.RUnlock()
+	if config.id == "" {
+		config.id = defaultID
+	}
+	if config.name == "" {
+		config.name = defaultName
+	}
+	if config.displayName == "" {
+		config.displayName = config.name
+	}
+	if config.description == "" {
+		config.description = defaultDescription
+	}
+	return visualization.ClientConfig{
+		ID:          config.id,
+		Name:        config.name,
+		DisplayName: config.displayName,
+		Description: config.description,
+		Path:        config.path,
+		Mode:        visualization.ModePush,
+	}
+}
+
+// VisualizationSnapshot 返回 Server 所需的通用运行时快照。
+func (fsm *FSM[T]) VisualizationSnapshot(ctx context.Context) (visualization.Snapshot, error) {
+	if fsm == nil {
+		return visualization.Snapshot{}, visualization.ErrInvalidClient
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	descriptor := visualization.Descriptor{
-		ID:          fsm.instanceID,
-		Name:        string(fsm.Name),
-		DisplayName: string(fsm.Name),
-		Description: fsm.Describe,
+	if err := ctx.Err(); err != nil {
+		return visualization.Snapshot{}, err
 	}
-	pusher, err := registrar.RegisterPush(ctx, descriptor, options...)
-	if err != nil {
-		return nil, err
+	return fsm.runtimeVisualizationSnapshot(), nil
+}
+
+// SubscribeVisualization 使 FSM 直接实现 visualization.PushClient。
+// 每次事件结束时只发布增量 trace，Server 会自行重新读取最新 Snapshot。
+func (fsm *FSM[T]) SubscribeVisualization(publish visualization.PublishFunc) func() {
+	if fsm == nil || publish == nil {
+		return func() {}
 	}
-	publisher := &fsmVisualizationPublisher[T]{fsm: fsm, pusher: pusher}
 	observerID := uuid.NewString()
-	unsubscribe := fsm.addRuntimeObserver(observerID, func(trace *TransitionTrace) {
-		publisher.publish(trace)
-	})
-	registration := &fsmVisualizationRegistration{
-		Pusher:      pusher,
-		unsubscribe: unsubscribe,
-	}
-	if err := publisher.push(ctx, nil); err != nil {
-		registration.Unregister()
-		return nil, err
-	}
-	go registration.releaseObserverWhenDone()
-	return registration, nil
-}
-
-// Register 是忽略注册错误的链式便捷方法。
-// 需要处理错误或保存注销句柄时，请调用 RegisterVisualization。
-func (fsm *FSM[T]) Register(
-	registrar visualization.Registrar,
-	options ...visualization.RegistrationOption,
-) *FSM[T] {
-	if fsm == nil || isNilVisualizationRegistrar(registrar) {
-		return fsm
-	}
-	_, _ = fsm.RegisterVisualization(context.Background(), registrar, options...)
-	return fsm
-}
-
-// FSMVisualizable 把 FSM 和注册选项包装成 visualization.Registrable，
-// 适合通过 server.Register(ctx, target) 使用对象自注册协议。
-func FSMVisualizable[T any](
-	fsm *FSM[T],
-	options ...visualization.RegistrationOption,
-) visualization.Registrable {
-	return fsmRegistrable[T]{
-		fsm:     fsm,
-		options: append([]visualization.RegistrationOption(nil), options...),
-	}
-}
-
-type fsmRegistrable[T any] struct {
-	fsm     *FSM[T]
-	options []visualization.RegistrationOption
-}
-
-func (target fsmRegistrable[T]) RegisterVisualization(
-	ctx context.Context,
-	registrar visualization.Registrar,
-) (visualization.Registration, error) {
-	return target.fsm.RegisterVisualization(ctx, registrar, target.options...)
-}
-
-type fsmVisualizationPublisher[T any] struct {
-	mu     sync.Mutex
-	fsm    *FSM[T]
-	pusher visualization.Pusher
-}
-
-func (publisher *fsmVisualizationPublisher[T]) publish(trace *TransitionTrace) {
-	_ = publisher.push(context.Background(), trace)
-}
-
-func (publisher *fsmVisualizationPublisher[T]) push(ctx context.Context, trace *TransitionTrace) error {
-	publisher.mu.Lock()
-	defer publisher.mu.Unlock()
-	snapshot := publisher.fsm.runtimeVisualizationSnapshot()
-	if trace == nil {
-		return publisher.pusher.Push(ctx, snapshot)
-	}
-	return publisher.pusher.Push(ctx, snapshot, newVisualizationTraceSnapshot(*trace))
-}
-
-type fsmVisualizationRegistration struct {
-	visualization.Pusher
-	once        sync.Once
-	unsubscribe func()
-}
-
-func (registration *fsmVisualizationRegistration) Unregister() bool {
-	registration.releaseObserver()
-	return registration.Pusher.Unregister()
-}
-
-func (registration *fsmVisualizationRegistration) releaseObserverWhenDone() {
-	<-registration.Done()
-	registration.releaseObserver()
-}
-
-func (registration *fsmVisualizationRegistration) releaseObserver() {
-	registration.once.Do(func() {
-		if registration.unsubscribe != nil {
-			registration.unsubscribe()
-		}
+	return fsm.addRuntimeObserver(observerID, func(trace *TransitionTrace) {
+		_ = publish(newVisualizationTraceSnapshot(*trace))
 	})
 }
 
 func (fsm *FSM[T]) runtimeVisualizationSnapshot() visualization.Snapshot {
 	fsm.stateLock.RLock()
-	descriptor := visualization.Descriptor{
-		ID:          fsm.instanceID,
-		Name:        string(fsm.Name),
-		DisplayName: string(fsm.Name),
-		Description: fsm.Describe,
-	}
 	transitionID := fsm.TtId
 	currentState := string(fsm.currentState)
 	previousState := string(fsm.fromState)
@@ -180,7 +141,6 @@ func (fsm *FSM[T]) runtimeVisualizationSnapshot() visualization.Snapshot {
 	sort.Strings(states)
 	payloadJSON, payloadError := marshalFSMPayload(payload)
 	return visualization.Snapshot{
-		Descriptor:           descriptor,
 		TransitionID:         transitionID,
 		CurrentState:         currentState,
 		PreviousState:        previousState,
@@ -272,12 +232,4 @@ func (fsm *FSM[T]) notifyRuntimeObservers(trace *TransitionTrace) {
 			observer(trace)
 		}()
 	}
-}
-
-func isNilVisualizationRegistrar(registrar visualization.Registrar) bool {
-	if registrar == nil {
-		return true
-	}
-	value := reflect.ValueOf(registrar)
-	return value.Kind() == reflect.Pointer && value.IsNil()
 }
