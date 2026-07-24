@@ -34,7 +34,7 @@ func (fsm *FSM[T]) VisualizeForMermaidWithGraphType(graphType MermaidDiagramType
 }
 
 // visualizeForMermaidAsStateDiagram 生成带 Mermaid Markdown 代码围栏的 stateDiagram-v2 文本。
-// 图的起始箭头指向状态机的当前状态，随后按稳定顺序输出全部迁移。
+// 图的起始箭头指向状态机的当前状态，随后按稳定顺序输出全部转移。
 func (fsm *FSM[T]) visualizeForMermaidAsStateDiagram() string {
 	var buf bytes.Buffer
 	transitions, currentState := fsm.visualizationSnapshot()
@@ -87,7 +87,7 @@ func writeFlowChartStates(buf *bytes.Buffer, sortedStates []FSMState, statesToID
 	buf.WriteString("\n")
 }
 
-// writeFlowChartTransitions 将迁移规则写为带事件标签的有向边。
+// writeFlowChartTransitions 将转移规则写为带事件标签的有向边。
 func writeFlowChartTransitions(buf *bytes.Buffer, transitions map[EventStateKey]FSMState, sortedTransitionKeys []EventStateKey, statesToIDMap map[string]string) {
 	for _, transition := range sortedTransitionKeys {
 		target := transitions[transition]

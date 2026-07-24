@@ -2,13 +2,25 @@
 
 示例均使用仓库当前版本的 `github.com/swkings/fsm`，可在仓库根目录直接运行。
 
-## 基础状态迁移
+## 基础状态转移
 
 演示泛型 Payload、`BeforeHandler`、`Handler`、`AfterHandler` 以及 `TransitionTrace`：
 
 ```bash
 go run ./examples/basic
 ```
+
+## 实时可视化 Server
+
+演示两种接入方式：本库 FSM 在状态变化后主动 push；一个不依赖 `fsm.FSM` 的第三方状态机实现 `visualization.Registrable` 和 `PullSource`，由 Server 定时 pull。两者通过 `path` 分入多级文件夹。
+
+Web 页面实时展示状态图、动态转移、当前可接收事件、Payload 和 Trace；支持文件夹聚合折叠与搜索、拖拽调整分栏、明暗主题切换和状态图 PNG 导出：
+
+```bash
+go run ./examples/server
+```
+
+程序会输出本机访问 URL，按 `Ctrl+C` 退出。
 
 ## 异步事件队列
 

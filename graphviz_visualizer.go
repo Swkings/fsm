@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// getSortedTransitionKeys 按源状态、事件的顺序稳定排列迁移键，保证每次生成的图文本一致。
+// getSortedTransitionKeys 按源状态、事件的顺序稳定排列转移键，保证每次生成的图文本一致。
 func getSortedTransitionKeys(transitions map[EventStateKey]FSMState) []EventStateKey {
 	sortedTransitionKeys := make([]EventStateKey, 0)
 
@@ -26,7 +26,7 @@ func getSortedTransitionKeys(transitions map[EventStateKey]FSMState) []EventStat
 	return sortedTransitionKeys
 }
 
-// getSortedStates 收集迁移图中出现的全部状态，按名称排序，并为每个状态生成稳定的节点 ID。
+// getSortedStates 收集转移图中出现的全部状态，按名称排序，并为每个状态生成稳定的节点 ID。
 func getSortedStates(transitions map[EventStateKey]FSMState, additionalStates ...FSMState) ([]FSMState, map[string]string) {
 	statesToIDMap := make(map[string]string)
 	for _, state := range additionalStates {
@@ -65,7 +65,7 @@ func writeHeaderLine(buf *bytes.Buffer) {
 	buf.WriteString("\n")
 }
 
-// writeTransitions 将迁移规则写为带事件标签的有向边。
+// writeTransitions 将转移规则写为带事件标签的有向边。
 func writeTransitions(buf *bytes.Buffer, sortedEKeys []EventStateKey, transitions map[EventStateKey]FSMState) {
 	for _, k := range sortedEKeys {
 		v := transitions[k]
@@ -94,7 +94,7 @@ func writeFooter(buf *bytes.Buffer) {
 }
 
 // DotString 将状态机当前配置渲染为 Graphviz DOT 文本。
-// 迁移和状态会先排序，以保证相同状态机配置生成稳定、便于比较的结果；当前状态使用红色边框标识。
+// 转移和状态会先排序，以保证相同状态机配置生成稳定、便于比较的结果；当前状态使用红色边框标识。
 func (fsm *FSM[T]) DotString() string {
 	var buf bytes.Buffer
 	transitions, currentState := fsm.visualizationSnapshot()

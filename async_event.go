@@ -26,7 +26,7 @@ type AsyncEventStatus string
 const (
 	// AsyncEventSucceeded 表示事件处理成功，目标状态已经提交。
 	AsyncEventSucceeded AsyncEventStatus = "succeeded"
-	// AsyncEventFailed 表示迁移规则不存在或 Handler 返回错误。
+	// AsyncEventFailed 表示转移规则不存在或 Handler 返回错误。
 	AsyncEventFailed AsyncEventStatus = "failed"
 	// AsyncEventCanceled 表示提交方 context 或状态机队列被取消。
 	AsyncEventCanceled AsyncEventStatus = "canceled"
@@ -58,7 +58,7 @@ type AsyncEventResult struct {
 	Priority EventPriority
 	// Status 是事件唯一的最终状态。
 	Status AsyncEventStatus
-	// Trace 和 Error 分别保存迁移追踪及最终错误；成功时 Error 为 nil。
+	// Trace 和 Error 分别保存转移追踪及最终错误；成功时 Error 为 nil。
 	Trace TransitionTrace
 	Error error
 	// SubmittedAt、StartedAt 和 FinishedAt 可用于计算排队及执行耗时。
@@ -547,10 +547,15 @@ func stopEventExpiryTimer(item *queuedEvent) {
 // rejectQueuedEvent 只为设置了 ctx 和 notify 的事件构建结果；fire-and-forget 事件直接结束。
 func (fsm *FSM[T]) rejectQueuedEvent(item *queuedEvent, status AsyncEventStatus, err error) {
 	stopEventExpiryTimer(item)
+	if item.receipt == nil && !fsm.hasRuntimeObservers() {
+		return
+	}
+	trace := fsm.rejectedEventTrace(item.event, err)
+	fsm.notifyRuntimeObservers(&trace)
 	if item.receipt == nil {
 		return
 	}
-	fsm.completeQueuedEvent(item, status, fsm.rejectedEventTrace(item.event, err), err, time.Time{})
+	fsm.completeQueuedEvent(item, status, trace, err, time.Time{})
 }
 
 func (fsm *FSM[T]) rejectedEventTrace(event FSMEvent, err error) TransitionTrace {
