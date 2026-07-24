@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -11,6 +12,10 @@ type doorPayload struct {
 	Name       string
 	Authorized bool
 	Stages     []string
+}
+
+func (p doorPayload) JSON() ([]byte, error) {
+	return json.Marshal(p)
 }
 
 func main() {

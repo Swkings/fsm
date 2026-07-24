@@ -17,65 +17,73 @@ import (
 )
 
 type thirdPartyFSM struct {
-	mu        sync.Mutex
-	collected int
-	fail      bool
+	mu              sync.Mutex
+	definitionCalls int
+	snapshotCalls   int
+	collected       int
+	fail            bool
 }
 
-func (machine *thirdPartyFSM) VisualizationConfig() ClientConfig {
-	return ClientConfig{
-		ID:           "third-party-order",
-		Name:         "order",
-		DisplayName:  "Third-party Order",
-		Description:  "external fsm implementation",
-		Path:         "/production / orders/",
-		Mode:         ModePull,
-		PullInterval: 10 * time.Millisecond,
+func (machine *thirdPartyFSM) VisualizationDefinition() Definition {
+	machine.mu.Lock()
+	machine.definitionCalls++
+	machine.mu.Unlock()
+	return Definition{
+		ID:          "third-party-order",
+		Name:        "order",
+		Description: "external fsm implementation",
+		States:      []string{"pending", "running", "done"},
+		Events:      []string{"start", "finish"},
+		Transitions: []TransitionSnapshot{
+			{FromState: "pending", Event: "start", ToState: "running"},
+			{FromState: "running", Event: "finish", ToState: "done"},
+		},
 	}
 }
 
-func (machine *thirdPartyFSM) VisualizationSnapshot(context.Context) (Snapshot, error) {
+func (machine *thirdPartyFSM) VisualizationSnapshot(context.Context) (RealtimeData, error) {
 	machine.mu.Lock()
 	defer machine.mu.Unlock()
 	machine.collected++
 	if machine.fail {
-		return Snapshot{}, errors.New("collector unavailable")
+		return RealtimeData{}, errors.New("collector unavailable")
 	}
 	state := "pending"
 	if machine.collected > 1 {
 		state = "running"
 	}
 	payload, _ := json.Marshal(map[string]any{"collected": machine.collected})
-	return Snapshot{
-		CurrentState: state,
-		Payload:      payload,
-		Transitions: []TransitionSnapshot{
-			{FromState: "pending", Event: "start", ToState: "running"},
-			{FromState: "running", Event: "finish", ToState: "done"},
-		},
-	}, nil
+	return RealtimeData{CurrentState: state, Payload: payload}, nil
 }
 
-func (machine *thirdPartyFSM) collectCount() int {
+func (machine *thirdPartyFSM) counts() (definitionCalls, collected int) {
 	machine.mu.Lock()
 	defer machine.mu.Unlock()
-	return machine.collected
+	return machine.definitionCalls, machine.collected
 }
 
 type testPushClient struct {
-	mu           sync.Mutex
-	config       ClientConfig
-	snapshot     Snapshot
-	publish      PublishFunc
-	unsubscribed bool
+	mu              sync.Mutex
+	definition      Definition
+	data            RealtimeData
+	definitionCalls int
+	snapshotCalls   int
+	publish         PublishFunc
+	unsubscribed    bool
 }
 
-func (client *testPushClient) VisualizationConfig() ClientConfig { return client.config }
-
-func (client *testPushClient) VisualizationSnapshot(context.Context) (Snapshot, error) {
+func (client *testPushClient) VisualizationDefinition() Definition {
 	client.mu.Lock()
 	defer client.mu.Unlock()
-	return cloneSnapshot(client.snapshot), nil
+	client.definitionCalls++
+	return cloneDefinition(client.definition)
+}
+
+func (client *testPushClient) VisualizationSnapshot(context.Context) (RealtimeData, error) {
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	client.snapshotCalls++
+	return cloneRealtimeData(client.data), nil
 }
 
 func (client *testPushClient) SubscribeVisualization(publish PublishFunc) func() {
@@ -90,31 +98,43 @@ func (client *testPushClient) SubscribeVisualization(publish PublishFunc) func()
 	}
 }
 
-func (client *testPushClient) update(snapshot Snapshot, traces ...TraceSnapshot) error {
+func (client *testPushClient) update(data RealtimeData, traces ...TraceSnapshot) error {
 	client.mu.Lock()
-	client.snapshot = snapshot
+	client.data = data
 	publish := client.publish
 	client.mu.Unlock()
 	if publish == nil {
 		return errors.New("push client is not subscribed")
 	}
-	return publish(traces...)
+	return publish(data, traces...)
 }
 
-func TestServerRegistersPullClientDirectly(t *testing.T) {
+func TestServerRegistersPullClientAndReadsDefinitionOnce(t *testing.T) {
 	server := NewServerWithConfig(ServerConfig{TraceLimit: 2})
 	defer server.Close(context.Background())
 
 	machine := &thirdPartyFSM{}
-	registration, err := server.Register(context.Background(), machine)
+	registration, err := server.Register(context.Background(), machine, RegistrationConfig{
+		DisplayName:  "Third-party Order",
+		Path:         "/production / orders/",
+		Mode:         ModePull,
+		PullInterval: 10 * time.Millisecond,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if registration.Mode() != ModePull || registration.ID() != "third-party-order" {
 		t.Fatalf("registration = id:%q mode:%q", registration.ID(), registration.Mode())
 	}
-	waitFor(t, func() bool { return machine.collectCount() >= 2 })
+	waitFor(t, func() bool {
+		_, collected := machine.counts()
+		return collected >= 2
+	})
 
+	definitionCalls, _ := machine.counts()
+	if definitionCalls != 1 {
+		t.Fatalf("VisualizationDefinition calls = %d, want 1", definitionCalls)
+	}
 	snapshot, exists := server.Snapshot(registration.ID())
 	if !exists {
 		t.Fatal("pull snapshot not found")
@@ -122,8 +142,8 @@ func TestServerRegistersPullClientDirectly(t *testing.T) {
 	if snapshot.Path != "production/orders" || snapshot.Mode != ModePull {
 		t.Fatalf("pull metadata = %+v", snapshot)
 	}
-	if snapshot.CurrentState != "running" || len(snapshot.States) != 3 {
-		t.Fatalf("pull topology = %+v", snapshot)
+	if snapshot.CurrentState != "running" || len(snapshot.States) != 3 || len(snapshot.Events) != 2 {
+		t.Fatalf("pull definition/runtime merge = %+v", snapshot)
 	}
 	if len(snapshot.AvailableTransitions) != 1 ||
 		snapshot.AvailableTransitions[0].Event != "finish" ||
@@ -148,28 +168,33 @@ func TestServerRegistersPullClientDirectly(t *testing.T) {
 	}
 }
 
-func TestServerRegistersPushClientAndStoresIncrementalTraces(t *testing.T) {
+func TestServerPushOnlyUpdatesRealtimeData(t *testing.T) {
 	server := NewServerWithConfig(ServerConfig{TraceLimit: 2})
 	defer server.Close(context.Background())
 
 	client := &testPushClient{
-		config: ClientConfig{
+		definition: Definition{
 			ID:          "worker-7",
 			Name:        "worker",
-			DisplayName: "Worker 7",
-			Path:        "region-a / workers",
-			Mode:        ModePush,
+			States:      []string{"idle", "running"},
+			Events:      []string{"run"},
+			Transitions: []TransitionSnapshot{{FromState: "idle", Event: "run", ToState: "running"}},
 		},
-		snapshot: Snapshot{
-			CurrentState: "idle",
-			Payload:      json.RawMessage(`{"job":7}`),
-			Transitions:  []TransitionSnapshot{{FromState: "idle", Event: "run", ToState: "running"}},
-		},
+		data: RealtimeData{CurrentState: "idle", Payload: json.RawMessage(`{"job":7}`)},
 	}
-	registration, err := server.Register(context.Background(), client)
+	registration, err := server.Register(context.Background(), client, RegistrationConfig{
+		DisplayName: "Worker 7",
+		Path:        "region-a / workers",
+		Mode:        ModePush,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	client.mu.Lock()
+	client.definition.States = []string{"corrupted"}
+	client.definition.Transitions = nil
+	client.mu.Unlock()
 	for index := 0; index < 3; index++ {
 		trace := TraceSnapshot{
 			TransitionID: fmt.Sprintf("trace-%d", index),
@@ -179,7 +204,10 @@ func TestServerRegistersPushClientAndStoresIncrementalTraces(t *testing.T) {
 			FinalState:   "running",
 			Success:      true,
 		}
-		if err := client.update(client.snapshot, trace); err != nil {
+		if err := client.update(RealtimeData{
+			CurrentState: "running",
+			Payload:      json.RawMessage(`{"job":7}`),
+		}, trace); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -190,13 +218,24 @@ func TestServerRegistersPushClientAndStoresIncrementalTraces(t *testing.T) {
 	if stored.Mode != ModePush || stored.Path != "region-a/workers" || stored.DisplayName != "Worker 7" {
 		t.Fatalf("push metadata = %+v", stored)
 	}
+	if len(stored.States) != 2 || len(stored.Transitions) != 1 || stored.Transitions[0].Event != "run" {
+		t.Fatalf("registered definition was changed: %+v", stored)
+	}
 	if len(stored.Traces) != 2 || stored.Traces[0].TransitionID != "trace-1" ||
 		stored.Traces[1].TransitionID != "trace-2" {
 		t.Fatalf("trace limit/order = %+v", stored.Traces)
 	}
-	if len(stored.AvailableTransitions) != 1 || stored.AvailableTransitions[0].ToState != "running" {
-		t.Fatalf("push topology = %+v", stored)
+	client.mu.Lock()
+	definitionCalls := client.definitionCalls
+	snapshotCalls := client.snapshotCalls
+	client.mu.Unlock()
+	if snapshotCalls != 1 {
+		t.Fatalf("VisualizationSnapshot calls = %d after pushes, want initial call only", snapshotCalls)
 	}
+	if definitionCalls != 1 {
+		t.Fatalf("VisualizationDefinition calls = %d, want 1", definitionCalls)
+	}
+
 	registration.Unregister()
 	client.mu.Lock()
 	unsubscribed := client.unsubscribed
@@ -245,6 +284,16 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 		}
 	}
 
+	runtimeBody := []byte(`{"currentState":"ready","payload":{"source":"http"}}`)
+	response, err = http.Post(httpServer.URL+"/api/push/remote-1", "application/json", bytes.NewReader(runtimeBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("push before registration status = %d", response.StatusCode)
+	}
+	_ = response.Body.Close()
+
 	streamContext, cancelStream := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelStream()
 	request, _ := http.NewRequestWithContext(streamContext, http.MethodGet, httpServer.URL+"/api/events", nil)
@@ -259,8 +308,28 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 		t.Fatalf("first SSE event = %+v", event)
 	}
 
-	body := []byte(`{"name":"remote","displayName":"Remote FSM","path":"external/team-a","currentState":"ready","transitions":[{"fromState":"ready","event":"run","toState":"busy"}],"payload":{"source":"http"}}`)
-	response, err = http.Post(httpServer.URL+"/api/push/remote-1", "application/json", bytes.NewReader(body))
+	definitionBody := []byte(`{"id":"remote-1","name":"remote","displayName":"Remote FSM","path":"external/team-a","states":["ready","busy"],"events":["run"],"transitions":[{"fromState":"ready","event":"run","toState":"busy"}]}`)
+	response, err = http.Post(httpServer.URL+"/api/fsms", "application/json", bytes.NewReader(definitionBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusCreated {
+		data, _ := io.ReadAll(response.Body)
+		t.Fatalf("registration status=%d body=%s", response.StatusCode, data)
+	}
+	_ = response.Body.Close()
+
+	invalidRuntimeBody := []byte(`{"currentState":"ready","states":["forged"]}`)
+	response, err = http.Post(httpServer.URL+"/api/push/remote-1", "application/json", bytes.NewReader(invalidRuntimeBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("push containing static definition status = %d", response.StatusCode)
+	}
+	_ = response.Body.Close()
+
+	response, err = http.Post(httpServer.URL+"/api/push/remote-1", "application/json", bytes.NewReader(runtimeBody))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,20 +355,21 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 	}
 	_ = response.Body.Close()
 	if detail.ID != "remote-1" || detail.Path != "external/team-a" ||
-		detail.CurrentState != "ready" || detail.Mode != ModePush {
+		detail.CurrentState != "ready" || detail.Mode != ModePush ||
+		len(detail.Transitions) != 1 || len(detail.AvailableTransitions) != 1 {
 		t.Fatalf("HTTP push detail = %+v", detail)
 	}
 }
 
 type configuredClient struct {
-	config   ClientConfig
-	snapshot Snapshot
+	definition Definition
+	data       RealtimeData
 }
 
-func (client *configuredClient) VisualizationConfig() ClientConfig { return client.config }
+func (client *configuredClient) VisualizationDefinition() Definition { return client.definition }
 
-func (client *configuredClient) VisualizationSnapshot(context.Context) (Snapshot, error) {
-	return client.snapshot, nil
+func (client *configuredClient) VisualizationSnapshot(context.Context) (RealtimeData, error) {
+	return client.data, nil
 }
 
 func TestServerRegistrationValidationAndModeIsolation(t *testing.T) {
@@ -307,44 +377,60 @@ func TestServerRegistrationValidationAndModeIsolation(t *testing.T) {
 	defer server.Close(context.Background())
 
 	var nilClient *configuredClient
-	if _, err := server.Register(context.Background(), nilClient); !errors.Is(err, ErrInvalidClient) {
+	if _, err := server.Register(
+		context.Background(),
+		nilClient,
+		RegistrationConfig{},
+	); !errors.Is(err, ErrInvalidClient) {
 		t.Fatalf("typed nil client error = %v", err)
 	}
-	if _, err := server.Register(context.Background(), &configuredClient{
-		config: ClientConfig{ID: "invalid/path"},
-	}); !errors.Is(err, ErrInvalidRegistrationID) {
+	if _, err := server.Register(
+		context.Background(),
+		&configuredClient{definition: Definition{ID: "invalid/path"}},
+		RegistrationConfig{},
+	); !errors.Is(err, ErrInvalidRegistrationID) {
 		t.Fatalf("invalid id error = %v", err)
 	}
-	if _, err := server.Register(context.Background(), &configuredClient{
-		config: ClientConfig{ID: "invalid-path", Path: "a//b"},
-	}); !errors.Is(err, ErrInvalidPath) {
+	if _, err := server.Register(
+		context.Background(),
+		&configuredClient{definition: Definition{ID: "invalid-path"}},
+		RegistrationConfig{Path: "a//b"},
+	); !errors.Is(err, ErrInvalidPath) {
 		t.Fatalf("invalid path error = %v", err)
 	}
-	first := &configuredClient{config: ClientConfig{ID: "same"}}
-	if _, err := server.Register(context.Background(), first); err != nil {
+	first := &configuredClient{definition: Definition{ID: "same"}}
+	if _, err := server.Register(context.Background(), first, RegistrationConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.Register(context.Background(), &configuredClient{
-		config: ClientConfig{ID: "same"},
-	}); !errors.Is(err, ErrRegistrationIDRepeated) {
+	if _, err := server.Register(
+		context.Background(),
+		&configuredClient{definition: Definition{ID: "same"}},
+		RegistrationConfig{},
+	); !errors.Is(err, ErrRegistrationIDRepeated) {
 		t.Fatalf("duplicate id error = %v", err)
 	}
-	pullRegistration, err := server.Register(context.Background(), &configuredClient{
-		config:   ClientConfig{ID: "pull-only", Mode: ModePull, PullInterval: time.Hour},
-		snapshot: Snapshot{CurrentState: "ok"},
-	})
+	pullRegistration, err := server.Register(
+		context.Background(),
+		&configuredClient{
+			definition: Definition{ID: "pull-only"},
+			data:       RealtimeData{CurrentState: "ok"},
+		},
+		RegistrationConfig{Mode: ModePull, PullInterval: time.Hour},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := server.Push(context.Background(), pullRegistration.ID(), Snapshot{}); !errors.Is(err, ErrRegistrationMode) {
+	if err := server.Push(context.Background(), pullRegistration.ID(), RealtimeData{}); !errors.Is(err, ErrRegistrationMode) {
 		t.Fatalf("push to pull registration error = %v", err)
 	}
-	if err := server.Push(context.Background(), "missing", Snapshot{}); !errors.Is(err, ErrRegistrationNotFound) {
+	if err := server.Push(context.Background(), "missing", RealtimeData{}); !errors.Is(err, ErrRegistrationNotFound) {
 		t.Fatalf("push missing registration error = %v", err)
 	}
-	if _, err := server.Register(context.Background(), &configuredClient{
-		config: ClientConfig{ID: "wrong-push", Mode: ModePush},
-	}); !errors.Is(err, ErrInvalidClient) {
+	if _, err := server.Register(
+		context.Background(),
+		&configuredClient{definition: Definition{ID: "wrong-push"}},
+		RegistrationConfig{Mode: ModePush},
+	); !errors.Is(err, ErrInvalidClient) {
 		t.Fatalf("push mode without PushClient error = %v", err)
 	}
 }
@@ -370,10 +456,10 @@ func TestServerStartAndClose(t *testing.T) {
 	}
 
 	client := &testPushClient{
-		config:   ClientConfig{ID: "close-me", Mode: ModePush},
-		snapshot: Snapshot{CurrentState: "idle"},
+		definition: Definition{ID: "close-me"},
+		data:       RealtimeData{CurrentState: "idle"},
 	}
-	registration, err := server.Register(context.Background(), client)
+	registration, err := server.Register(context.Background(), client, RegistrationConfig{Mode: ModePush})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,18 +480,20 @@ func TestServerStartAndClose(t *testing.T) {
 
 type panicClient struct{}
 
-func (*panicClient) VisualizationConfig() ClientConfig {
-	return ClientConfig{ID: "panic-source", Mode: ModePull, PullInterval: time.Hour}
+func (*panicClient) VisualizationDefinition() Definition {
+	return Definition{ID: "panic-source"}
 }
 
-func (*panicClient) VisualizationSnapshot(context.Context) (Snapshot, error) {
+func (*panicClient) VisualizationSnapshot(context.Context) (RealtimeData, error) {
 	panic("third-party failure")
 }
 
 func TestRegistrationContextCancellationAndSnapshotPanicIsolation(t *testing.T) {
 	server := NewServer()
 	ctx, cancel := context.WithCancel(context.Background())
-	registration, err := server.Register(ctx, &panicClient{})
+	registration, err := server.Register(ctx, &panicClient{}, RegistrationConfig{
+		Mode: ModePull, PullInterval: time.Hour,
+	})
 	if err != nil {
 		t.Fatalf("register panic client: %v", err)
 	}

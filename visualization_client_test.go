@@ -2,6 +2,7 @@ package fsm
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -12,9 +13,14 @@ type visualizationTestPayload struct {
 	Count int `json:"count"`
 }
 
+func (p visualizationTestPayload) JSON() ([]byte, error) {
+	return json.Marshal(p)
+}
+
 func TestFSMImplementsPushClientDirectly(t *testing.T) {
 	server := visualization.NewServerWithConfig(visualization.ServerConfig{TraceLimit: 2})
 	machine := NewFSM("door", FSMState("closed"), &visualizationTestPayload{})
+	machine.Describe = "warehouse door state machine"
 	defer machine.Close()
 	machine.SetTransitions(NewTransitionItem(
 		"open",
@@ -25,14 +31,11 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 			return nil
 		}},
 	))
-	machine.SetVisualizationConfig(visualization.ClientConfig{
-		ID:          "door-1",
+	var client visualization.PushClient = machine
+	registration, err := server.Register(context.Background(), client, visualization.RegistrationConfig{
 		DisplayName: "Warehouse Door",
 		Path:        "production/doors",
 	})
-
-	var client visualization.PushClient = machine
-	registration, err := server.Register(context.Background(), client)
 	if err != nil {
 		t.Fatalf("register FSM: %v", err)
 	}
@@ -46,12 +49,16 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 	if _, err = machine.ProcessEvent("open"); err != nil {
 		t.Fatalf("process event: %v", err)
 	}
-	snapshot, ok := server.Snapshot("door-1")
+	snapshot, ok := server.Snapshot(registration.ID())
 	if !ok {
 		t.Fatal("registered FSM snapshot not found")
 	}
 	if snapshot.Path != "production/doors" || snapshot.CurrentState != "opened" {
 		t.Fatalf("snapshot = path %q, state %q", snapshot.Path, snapshot.CurrentState)
+	}
+	if snapshot.ID != machine.instanceID || snapshot.Name != string(machine.Name) ||
+		snapshot.Description != machine.Describe || snapshot.DisplayName != "Warehouse Door" {
+		t.Fatalf("snapshot identity = %+v", snapshot.Descriptor)
 	}
 	if len(snapshot.Traces) != 1 || snapshot.Traces[0].Event != "open" {
 		t.Fatalf("unexpected traces: %+v", snapshot.Traces)
@@ -70,12 +77,20 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 	}
 }
 
+type emptyPayload struct {
+	Data struct{}
+}
+
+func (d emptyPayload) JSON() ([]byte, error) {
+	return json.Marshal(d)
+}
+
 func TestFSMUsesDefaultVisualizationConfig(t *testing.T) {
 	server := visualization.NewServer()
-	machine := NewFSM("job", FSMState("idle"), &struct{}{})
+	machine := NewFSM("job", FSMState("idle"), &emptyPayload{})
 	defer machine.Close()
 
-	registration, err := server.Register(context.Background(), machine)
+	registration, err := server.Register(context.Background(), machine, visualization.RegistrationConfig{})
 	if err != nil {
 		t.Fatalf("register FSM: %v", err)
 	}

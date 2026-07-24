@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/signal"
 	"sync"
@@ -17,6 +18,10 @@ type doorPayload struct {
 	OpenCount int    `json:"openCount"`
 }
 
+func (p doorPayload) JSON() ([]byte, error) {
+	return json.Marshal(p)
+}
+
 // externalWorker 不依赖 fsm.FSM，只需直接实现 visualization.Client。
 type externalWorker struct {
 	mu       sync.RWMutex
@@ -24,29 +29,26 @@ type externalWorker struct {
 	progress int
 }
 
-func (worker *externalWorker) VisualizationConfig() visualization.ClientConfig {
-	return visualization.ClientConfig{
-		ID:           "external-worker",
-		Name:         "worker",
-		DisplayName:  "Third-party Worker",
-		Description:  "A third-party FSM collected by the server",
-		Path:         "production/workers/external",
-		Mode:         visualization.ModePull,
-		PullInterval: time.Second,
-	}
-}
-
-func (worker *externalWorker) VisualizationSnapshot(context.Context) (visualization.Snapshot, error) {
-	worker.mu.RLock()
-	defer worker.mu.RUnlock()
-	return visualization.Snapshot{
-		CurrentState: worker.state,
-		States:       []string{"idle", "running", "done"},
+// VisualizationDefinition 只在注册时调用一次，返回完整状态、事件和转移图。
+func (worker *externalWorker) VisualizationDefinition() visualization.Definition {
+	return visualization.Definition{
+		ID:          "external-worker",
+		Name:        "worker",
+		Description: "A third-party FSM collected by the server",
+		States:      []string{"idle", "running", "done"},
+		Events:      []string{"start", "finish"},
 		Transitions: []visualization.TransitionSnapshot{
 			{Event: "start", FromState: "idle", ToState: "running"},
 			{Event: "finish", FromState: "running", ToState: "done"},
 		},
-	}, nil
+	}
+}
+
+// VisualizationSnapshot 在后续 pull 中只返回实时数据。
+func (worker *externalWorker) VisualizationSnapshot(context.Context) (visualization.RealtimeData, error) {
+	worker.mu.RLock()
+	defer worker.mu.RUnlock()
+	return visualization.RealtimeData{CurrentState: worker.state}, nil
 }
 
 func main() {
@@ -69,19 +71,22 @@ func main() {
 		}}),
 		fsm.NewTransitionItem[doorPayload]("close", "opened", "closed", fsm.Handler[doorPayload]{}),
 	)
-	door.SetVisualizationConfig(visualization.ClientConfig{
-		ID:          "warehouse-door",
+	doorRegistration, err := server.Register(context.Background(), door, visualization.RegistrationConfig{
 		DisplayName: "Warehouse Door",
 		Path:        "production/warehouse/doors",
 	})
-	doorRegistration, err := server.Register(context.Background(), door)
 	if err != nil {
 		panic(err)
 	}
 	defer doorRegistration.Unregister()
 
 	worker := &externalWorker{state: "idle"}
-	workerRegistration, err := server.Register(context.Background(), worker)
+	workerRegistration, err := server.Register(context.Background(), worker, visualization.RegistrationConfig{
+		DisplayName:  "Third-party Worker",
+		Path:         "production/workers/external",
+		Mode:         visualization.ModePull,
+		PullInterval: time.Second,
+	})
 	if err != nil {
 		panic(err)
 	}

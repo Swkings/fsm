@@ -118,11 +118,14 @@ func (server *Server) handleIndex(writer http.ResponseWriter, request *http.Requ
 }
 
 func (server *Server) handleFSMList(writer http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodGet {
+	switch request.Method {
+	case http.MethodGet:
+		writeJSON(writer, http.StatusOK, server.Snapshots())
+	case http.MethodPost:
+		server.handleRemoteRegistration(writer, request)
+	default:
 		writer.WriteHeader(http.StatusMethodNotAllowed)
-		return
 	}
-	writeJSON(writer, http.StatusOK, server.Snapshots())
 }
 
 func (server *Server) handleFSMDetail(writer http.ResponseWriter, request *http.Request) {
@@ -139,24 +142,50 @@ func (server *Server) handleFSMDetail(writer http.ResponseWriter, request *http.
 	writeJSON(writer, http.StatusOK, snapshot)
 }
 
-func (server *Server) registerRemote(descriptor Descriptor) error {
-	config, err := normalizeClientConfig(ClientConfig{
-		ID:          descriptor.ID,
-		Name:        descriptor.Name,
-		DisplayName: descriptor.DisplayName,
-		Description: descriptor.Description,
-		Path:        descriptor.Path,
-		Mode:        ModePush,
-	}, true)
+type remoteRegistrationRequest struct {
+	Definition
+	DisplayName string `json:"displayName"`
+	Path        string `json:"path,omitempty"`
+}
+
+func (server *Server) registerRemote(definition Definition, config RegistrationConfig) error {
+	config.Mode = ModePush
+	normalizedDefinition, normalizedConfig, err := normalizeRegistration(definition, config, true)
 	if err != nil {
 		return err
 	}
-	_, err = server.addRegistration(context.Background(), config, nil)
+	_, err = server.addRegistration(
+		context.Background(),
+		normalizedDefinition,
+		normalizedConfig,
+		nil,
+	)
 	return err
 }
 
-// handlePush 提供类似 Pushgateway 的 HTTP push 入口。
-// 首次 POST /api/push/{id} 会使用请求中的 Descriptor 自动创建注册。
+// handleRemoteRegistration 注册跨进程 push 客户端的完整静态 Definition 和挂载配置。
+// 后续 POST /api/push/{id} 只接收 RealtimeData。
+func (server *Server) handleRemoteRegistration(writer http.ResponseWriter, request *http.Request) {
+	var registration remoteRegistrationRequest
+	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 4<<20)).Decode(&registration); err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	config := RegistrationConfig{
+		DisplayName: registration.DisplayName,
+		Path:        registration.Path,
+		Mode:        ModePush,
+	}
+	if err := server.registerRemote(registration.Definition, config); err != nil {
+		writeJSON(writer, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	stored, _ := server.Snapshot(strings.TrimSpace(registration.ID))
+	writeJSON(writer, http.StatusCreated, stored)
+}
+
+// handlePush 提供类似 Pushgateway 的实时数据入口。
+// FSM 必须先通过 POST /api/fsms 注册完整 Definition。
 func (server *Server) handlePush(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
@@ -167,21 +196,19 @@ func (server *Server) handlePush(writer http.ResponseWriter, request *http.Reque
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": ErrInvalidRegistrationID.Error()})
 		return
 	}
-	var snapshot Snapshot
-	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 4<<20)).Decode(&snapshot); err != nil {
+	var data RealtimeData
+	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 4<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&data); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if _, exists := server.Snapshot(id); !exists {
-		snapshot.ID = id
-		if err := server.registerRemote(snapshot.Descriptor); err != nil &&
-			!errors.Is(err, ErrRegistrationIDRepeated) {
-			writeJSON(writer, http.StatusConflict, map[string]string{"error": err.Error()})
-			return
+	if err := server.Push(request.Context(), id, data); err != nil {
+		status := http.StatusConflict
+		if errors.Is(err, ErrRegistrationNotFound) {
+			status = http.StatusNotFound
 		}
-	}
-	if err := server.Push(request.Context(), id, snapshot); err != nil {
-		writeJSON(writer, http.StatusConflict, map[string]string{"error": err.Error()})
+		writeJSON(writer, status, map[string]string{"error": err.Error()})
 		return
 	}
 	stored, _ := server.Snapshot(id)

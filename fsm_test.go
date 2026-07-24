@@ -1,6 +1,7 @@
 package fsm
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,6 +12,10 @@ import (
 
 type testPayload struct {
 	Value int
+}
+
+func (payload testPayload) JSON() ([]byte, error) {
+	return json.Marshal(payload)
 }
 
 func TestProcessEventRunsHandlerStagesInOrder(t *testing.T) {

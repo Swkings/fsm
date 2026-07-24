@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -12,6 +13,10 @@ import (
 type payload struct {
 	mu    sync.Mutex
 	order []string
+}
+
+func (p payload) JSON() ([]byte, error) {
+	return json.Marshal(p.order)
 }
 
 func (p *payload) append(event string) {

@@ -119,67 +119,86 @@ defer server.Close(context.Background())
 进程内客户端只有一个注册入口：
 
 ```go
-registration, err := server.Register(ctx, client)
+registration, err := server.Register(ctx, client, visualization.RegistrationConfig{
+    DisplayName: "Order Worker",
+    Path:        "production/orders",
+})
 defer registration.Unregister()
 ```
 
-Server 定义两个直接接口：
+Server 将注册阶段和运行阶段明确分开：
 
 ```go
 type Client interface {
-    VisualizationConfig() ClientConfig
-    VisualizationSnapshot(context.Context) (Snapshot, error)
+    // 仅在 Register 时调用一次，返回 FSM 自身标识和完整状态图。
+    VisualizationDefinition() Definition
+
+    // 注册完成后仅返回当前状态、Payload、运行信息和 Trace。
+    VisualizationSnapshot(context.Context) (RealtimeData, error)
 }
 
 type PushClient interface {
     Client
     SubscribeVisualization(PublishFunc) func()
 }
+
+type PublishFunc func(RealtimeData, ...TraceSnapshot) error
 ```
 
-- **pull 客户端**只实现 `Client`。Server 注册时立即读取一次快照，之后按照 `ClientConfig.PullInterval` 主动拉取，默认间隔 5 秒。
-- **push 客户端**额外实现 `PushClient`。Server 会传入一个 `PublishFunc`；客户端状态变化时调用它，Server 随后自行读取最新快照。客户端只需返回取消订阅函数。
-- 注册元数据全部放在一个 `ClientConfig` 中，包括 ID、名称、path、模式和 pull 间隔，不再经过注册器回调或 Option 链。
+- **注册阶段**：Server 只调用一次 `VisualizationDefinition`，缓存 FSM 自身 ID、名称、描述、完整状态、完整事件和状态转移图；显示名称、目录、采集模式和 pull 间隔由 `RegistrationConfig` 随 `Register` 传入。
+- **pull 模式**：Server 注册时读取一次 `RealtimeData`，之后按照 `RegistrationConfig.PullInterval` 拉取实时数据，默认间隔 5 秒。
+- **push 模式**：客户端状态变化时通过 `PublishFunc` 直接提交 `RealtimeData` 和可选的增量 Trace；Server 不会再反向读取或同步静态定义。
+- Web/API 使用的 `Snapshot` 由 Server 将缓存的 `Definition` 与最新 `RealtimeData` 合成。当前可接收事件也由 Server 根据当前状态和静态转移图计算。
 - 取消注册 context、调用 `Unregister` 或关闭 Server 都会停止 pull/订阅，并关闭 `Registration.Done()`。
 
-第三方 pull FSM 的完整实现只需要两个方法：
+第三方 pull FSM 只需要实现两个方法：
 
 ```go
-func (machine *MyFSM) VisualizationConfig() visualization.ClientConfig {
-    return visualization.ClientConfig{
+func (machine *MyFSM) VisualizationDefinition() visualization.Definition {
+    return visualization.Definition{
         ID:           machine.ID,
         Name:         "order",
-        Path:         "region-a/services/orders",
-        Mode:         visualization.ModePull,
-        PullInterval: 3 * time.Second,
+        States:       []string{"created", "paid", "shipped"},
+        Events:       []string{"pay", "ship"},
+        Transitions: []visualization.TransitionSnapshot{
+            {FromState: "created", Event: "pay", ToState: "paid"},
+            {FromState: "paid", Event: "ship", ToState: "shipped"},
+        },
     }
 }
 
 func (machine *MyFSM) VisualizationSnapshot(
     ctx context.Context,
-) (visualization.Snapshot, error) {
-    return visualization.Snapshot{
+) (visualization.RealtimeData, error) {
+    return visualization.RealtimeData{
         CurrentState: machine.State(),
-        Transitions:  machine.Transitions(),
         Payload:      machine.PayloadJSON(),
     }, nil
 }
 
-registration, err := server.Register(ctx, machine)
+registration, err := server.Register(ctx, machine, visualization.RegistrationConfig{
+    DisplayName:  "Order Service",
+    Path:         "region-a/services/orders",
+    Mode:         visualization.ModePull,
+    PullInterval: 3 * time.Second,
+})
 ```
 
-内置 `fsm.FSM` 已直接实现 `visualization.PushClient`，只需按需设置展示元数据后注册：
+内置 `fsm.FSM` 已直接实现 `visualization.PushClient`。Definition 直接使用 FSM 的 `instanceID`、`Name`、`Describe` 并自动提取完整状态图；FSM 内部不保存任何可视化配置，事件完成后只推送实时数据：
 
 ```go
-orderFSM.SetVisualizationConfig(visualization.ClientConfig{
-    ID:          "order-1001",
+registration, err := server.Register(ctx, orderFSM, visualization.RegistrationConfig{
     DisplayName: "Order 1001",
     Path:        "production/orders/checkout",
 })
-registration, err := server.Register(ctx, orderFSM)
 ```
 
-跨进程客户端仍可向 `POST /api/push/{id}` 提交 `Snapshot` JSON；首次提交会自动创建 push 注册。
+跨进程 push 客户端使用两阶段协议：
+
+1. 首次向 `POST /api/fsms` 提交完整 `Definition`。
+2. 后续向 `POST /api/push/{id}` 只提交 `RealtimeData`。
+
+实时 Push 请求如果夹带 `states`、`events` 或 `transitions` 等静态字段会被拒绝，未注册的 ID 也不会被自动创建。
 
 Web 页面实时展示：
 
@@ -191,7 +210,7 @@ Web 页面实时展示：
 - Payload、Trace 和事件使用可折叠浮层；Header 可调节浮层、Header 和侧栏透明度，默认 85%。
 - 明暗主题切换、pull 采集错误以及动态注册/注销。
 
-HTTP 接口为 `/api/fsms`、`/api/fsms/{id}`、`POST /api/push/{id}`，实时更新使用 `/api/events` SSE。`Handler()` 可以挂载到已有 HTTP 服务。Server 不提供鉴权，绑定公网地址时应由应用或反向代理增加认证和访问控制。
+HTTP 接口为 `GET/POST /api/fsms`、`GET /api/fsms/{id}`、`POST /api/push/{id}`，实时更新使用 `/api/events` SSE。`Handler()` 可以挂载到已有 HTTP 服务。Server 不提供鉴权，绑定公网地址时应由应用或反向代理增加认证和访问控制。
 
 可运行示例：
 

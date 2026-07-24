@@ -14,7 +14,8 @@ import (
 )
 
 type registeredClient struct {
-	config      ClientConfig
+	definition  Definition
+	config      RegistrationConfig
 	client      Client
 	snapshot    Snapshot
 	traces      []TraceSnapshot
@@ -53,7 +54,7 @@ func (registration *Registration) Unregister() bool {
 	return registration != nil && registration.server != nil && registration.server.Unregister(registration.id)
 }
 
-// Server 提供客户端注册、pull/push 采集、HTTP API、SSE 和内嵌 Web 页面。
+// Server 提供客户端注册、pull/push 实时数据采集、HTTP API、SSE 和内嵌 Web 页面。
 type Server struct {
 	address    string
 	traceLimit int
@@ -92,9 +93,10 @@ func NewServerWithConfig(config ServerConfig) *Server {
 	return server
 }
 
-// Register 注册客户端。pull 客户端实现 Client；push 客户端实现 PushClient。
-// Server 直接读取客户端配置和快照，并负责后续刷新与注销生命周期。
-func (server *Server) Register(ctx context.Context, client Client) (*Registration, error) {
+// Register 注册客户端。
+// Server 在此阶段只读取一次完整 Definition，并将 config 绑定到返回的 Registration。
+// 后续 pull/push 只接收 RealtimeData，不会把注册配置写回客户端。
+func (server *Server) Register(ctx context.Context, client Client, config RegistrationConfig) (*Registration, error) {
 	if isNilInterface(client) {
 		return nil, ErrInvalidClient
 	}
@@ -105,48 +107,48 @@ func (server *Server) Register(ctx context.Context, client Client) (*Registratio
 		return nil, err
 	}
 	pushClient, supportsPush := client.(PushClient)
-	config, err := clientConfig(client)
+	definition, err := clientDefinition(client)
 	if err != nil {
 		return nil, err
 	}
-	config, err = normalizeClientConfig(config, supportsPush)
+	definition, config, err = normalizeRegistration(definition, config, supportsPush)
 	if err != nil {
 		return nil, err
 	}
-	registered, err := server.addRegistration(ctx, config, client)
+	registered, err := server.addRegistration(ctx, definition, config, client)
 	if err != nil {
 		return nil, err
 	}
 	handle := &Registration{
 		server: server,
-		id:     config.ID,
+		id:     definition.ID,
 		mode:   config.Mode,
 		done:   registered.done,
 	}
 	if config.Mode == ModePush {
-		unsubscribe, subscribeErr := subscribeClient(pushClient, func(traces ...TraceSnapshot) error {
-			return server.refreshClient(config.ID, registered, traces)
+		unsubscribe, subscribeErr := subscribeClient(pushClient, func(data RealtimeData, traces ...TraceSnapshot) error {
+			return server.storeRealtimeData(definition.ID, registered, data, traces)
 		})
 		if subscribeErr != nil {
 			handle.Unregister()
 			return nil, subscribeErr
 		}
-		server.attachUnsubscribe(config.ID, registered, unsubscribe)
+		server.attachUnsubscribe(definition.ID, registered, unsubscribe)
 	}
-	_ = server.refreshClient(config.ID, registered, nil)
+	_ = server.refreshClient(definition.ID, registered)
 	if config.Mode == ModePull {
-		go server.runPull(config.ID, registered)
+		go server.runPull(definition.ID, registered)
 	}
 	return handle, nil
 }
 
-func clientConfig(client Client) (config ClientConfig, err error) {
+func clientDefinition(client Client) (definition Definition, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("%w: config panic: %v", ErrInvalidClient, recovered)
+			err = fmt.Errorf("%w: definition panic: %v", ErrInvalidClient, recovered)
 		}
 	}()
-	return client.VisualizationConfig(), nil
+	return client.VisualizationDefinition(), nil
 }
 
 func subscribeClient(client PushClient, publish PublishFunc) (unsubscribe func(), err error) {
@@ -160,19 +162,19 @@ func subscribeClient(client PushClient, publish PublishFunc) (unsubscribe func()
 
 func (server *Server) addRegistration(
 	ctx context.Context,
-	config ClientConfig,
+	definition Definition,
+	config RegistrationConfig,
 	client Client,
 ) (*registeredClient, error) {
 	sourceContext, cancel := context.WithCancel(ctx)
 	registered := &registeredClient{
-		config: config,
-		client: client,
-		snapshot: Snapshot{
-			Descriptor: config.Descriptor(),
-			Mode:       config.Mode,
-			Payload:    json.RawMessage("null"),
-			UpdatedAt:  time.Now(),
-		},
+		definition: cloneDefinition(definition),
+		config:     config,
+		client:     client,
+		snapshot: buildSnapshot(definition, config, RealtimeData{
+			Payload:   json.RawMessage("null"),
+			UpdatedAt: time.Now(),
+		}, nil, ""),
 		ctx:    sourceContext,
 		cancel: cancel,
 		done:   make(chan struct{}),
@@ -183,17 +185,17 @@ func (server *Server) addRegistration(
 		cancel()
 		return nil, ErrServerClosed
 	}
-	if _, exists := server.sources[config.ID]; exists {
+	if _, exists := server.sources[definition.ID]; exists {
 		server.mu.Unlock()
 		cancel()
-		return nil, fmt.Errorf("%w: %s", ErrRegistrationIDRepeated, config.ID)
+		return nil, fmt.Errorf("%w: %s", ErrRegistrationIDRepeated, definition.ID)
 	}
-	server.sources[config.ID] = registered
+	server.sources[definition.ID] = registered
 	server.mu.Unlock()
-	server.broadcast("registered", config.ID)
+	server.broadcast("registered", definition.ID)
 	go func() {
 		<-sourceContext.Done()
-		server.Unregister(config.ID)
+		server.Unregister(definition.ID)
 	}()
 	return registered, nil
 }
@@ -219,42 +221,37 @@ func (server *Server) runPull(id string, registered *registeredClient) {
 	for {
 		select {
 		case <-ticker.C:
-			_ = server.refreshClient(id, registered, nil)
+			_ = server.refreshClient(id, registered)
 		case <-registered.done:
 			return
 		}
 	}
 }
 
-func (server *Server) refreshClient(
-	id string,
-	expected *registeredClient,
-	traces []TraceSnapshot,
-) error {
+func (server *Server) refreshClient(id string, expected *registeredClient) error {
 	expected.updateMu.Lock()
 	defer expected.updateMu.Unlock()
 	if err := expected.ctx.Err(); err != nil {
 		return err
 	}
-	snapshot, err := clientSnapshot(expected.client, expected.ctx)
+	data, err := clientRealtimeData(expected.client, expected.ctx)
 	if err != nil {
 		server.markCollectionError(id, expected, err)
 		return err
 	}
-	snapshot.CollectionError = ""
-	if !server.storeSnapshot(id, expected, prepareSnapshot(expected.config, snapshot), traces) {
+	if !server.storeRealtimeDataLocked(id, expected, data, nil) {
 		return fmt.Errorf("%w: %s", ErrRegistrationNotFound, id)
 	}
 	return nil
 }
 
-func clientSnapshot(client Client, ctx context.Context) (snapshot Snapshot, err error) {
+func clientRealtimeData(client Client, ctx context.Context) (data RealtimeData, err error) {
 	if client == nil {
-		return Snapshot{}, ErrInvalidClient
+		return RealtimeData{}, ErrInvalidClient
 	}
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("visualization snapshot panic: %v", recovered)
+			err = fmt.Errorf("visualization realtime data panic: %v", recovered)
 		}
 	}()
 	return client.VisualizationSnapshot(ctx)
@@ -273,12 +270,12 @@ func (server *Server) markCollectionError(id string, expected *registeredClient,
 	}
 }
 
-// Push 为 HTTP Pushgateway 或其他跨进程客户端提交完整快照。
-// 进程内客户端应优先实现 PushClient 并通过 Register 注册。
+// Push 为 HTTP Pushgateway 或其他跨进程客户端提交实时数据。
+// FSM 的 Definition 必须已经完成注册，实时更新中不再接受静态定义。
 func (server *Server) Push(
 	ctx context.Context,
 	id string,
-	snapshot Snapshot,
+	data RealtimeData,
 	traces ...TraceSnapshot,
 ) error {
 	if ctx == nil {
@@ -298,28 +295,41 @@ func (server *Server) Push(
 		return fmt.Errorf("%w: %s is %s", ErrRegistrationMode, id, registered.config.Mode)
 	}
 	server.mu.RUnlock()
-	registered.updateMu.Lock()
-	defer registered.updateMu.Unlock()
-	if !server.storeSnapshot(id, registered, prepareSnapshot(registered.config, snapshot), traces) {
+	return server.storeRealtimeData(id, registered, data, traces)
+}
+
+func (server *Server) storeRealtimeData(
+	id string,
+	expected *registeredClient,
+	data RealtimeData,
+	incrementalTraces []TraceSnapshot,
+) error {
+	expected.updateMu.Lock()
+	defer expected.updateMu.Unlock()
+	if err := expected.ctx.Err(); err != nil {
+		return err
+	}
+	if !server.storeRealtimeDataLocked(id, expected, data, incrementalTraces) {
 		return fmt.Errorf("%w: %s", ErrRegistrationNotFound, id)
 	}
 	return nil
 }
 
-func (server *Server) storeSnapshot(
+func (server *Server) storeRealtimeDataLocked(
 	id string,
 	expected *registeredClient,
-	snapshot Snapshot,
+	data RealtimeData,
 	incrementalTraces []TraceSnapshot,
 ) bool {
+	data = cloneRealtimeData(data)
 	server.mu.Lock()
 	registered, exists := server.sources[id]
 	if !exists || registered != expected {
 		server.mu.Unlock()
 		return false
 	}
-	if snapshot.Traces != nil {
-		registered.traces = append([]TraceSnapshot(nil), snapshot.Traces...)
+	if data.Traces != nil {
+		registered.traces = append([]TraceSnapshot(nil), data.Traces...)
 	}
 	if len(incrementalTraces) > 0 {
 		registered.traces = append(registered.traces, incrementalTraces...)
@@ -330,66 +340,50 @@ func (server *Server) storeSnapshot(
 			registered.traces[len(registered.traces)-server.traceLimit:]...,
 		)
 	}
-	snapshot.Traces = append([]TraceSnapshot(nil), registered.traces...)
-	registered.snapshot = snapshot
+	registered.snapshot = buildSnapshot(registered.definition, registered.config, data, registered.traces, "")
 	server.mu.Unlock()
 	server.broadcast("updated", id)
 	return true
 }
 
-func prepareSnapshot(config ClientConfig, snapshot Snapshot) Snapshot {
-	snapshot = cloneSnapshot(snapshot)
-	snapshot.Descriptor = config.Descriptor()
-	snapshot.Mode = config.Mode
-	if snapshot.Payload == nil {
-		snapshot.Payload = json.RawMessage("null")
+func buildSnapshot(
+	definition Definition,
+	config RegistrationConfig,
+	data RealtimeData,
+	traces []TraceSnapshot,
+	collectionError string,
+) Snapshot {
+	data = cloneRealtimeData(data)
+	if data.Payload == nil {
+		data.Payload = json.RawMessage("null")
 	}
-	if snapshot.UpdatedAt.IsZero() {
-		snapshot.UpdatedAt = time.Now()
+	if data.UpdatedAt.IsZero() {
+		data.UpdatedAt = time.Now()
 	}
-	completeTopology(&snapshot)
-	return snapshot
-}
-
-func completeTopology(snapshot *Snapshot) {
-	stateSet := make(map[string]struct{}, len(snapshot.States)+1)
-	for _, state := range snapshot.States {
-		if state != "" {
-			stateSet[state] = struct{}{}
+	available := make([]TransitionSnapshot, 0)
+	for _, transition := range definition.Transitions {
+		if transition.FromState == data.CurrentState {
+			available = append(available, transition)
 		}
 	}
-	if snapshot.CurrentState != "" {
-		stateSet[snapshot.CurrentState] = struct{}{}
+	return Snapshot{
+		Descriptor:           definition.Descriptor(config),
+		Mode:                 config.Mode,
+		TransitionID:         data.TransitionID,
+		CurrentState:         data.CurrentState,
+		PreviousState:        data.PreviousState,
+		PreviousEvent:        data.PreviousEvent,
+		ProcessingEvent:      data.ProcessingEvent,
+		Payload:              data.Payload,
+		PayloadError:         data.PayloadError,
+		CollectionError:      collectionError,
+		States:               append([]string(nil), definition.States...),
+		Events:               append([]string(nil), definition.Events...),
+		Transitions:          append([]TransitionSnapshot(nil), definition.Transitions...),
+		AvailableTransitions: available,
+		Traces:               append([]TraceSnapshot(nil), traces...),
+		UpdatedAt:            data.UpdatedAt,
 	}
-	if snapshot.AvailableTransitions == nil {
-		snapshot.AvailableTransitions = make([]TransitionSnapshot, 0)
-	}
-	for _, transition := range snapshot.Transitions {
-		if transition.FromState != "" {
-			stateSet[transition.FromState] = struct{}{}
-		}
-		if transition.ToState != "" {
-			stateSet[transition.ToState] = struct{}{}
-		}
-		if transition.FromState == snapshot.CurrentState &&
-			!containsTransition(snapshot.AvailableTransitions, transition) {
-			snapshot.AvailableTransitions = append(snapshot.AvailableTransitions, transition)
-		}
-	}
-	snapshot.States = snapshot.States[:0]
-	for state := range stateSet {
-		snapshot.States = append(snapshot.States, state)
-	}
-	sort.Strings(snapshot.States)
-}
-
-func containsTransition(transitions []TransitionSnapshot, candidate TransitionSnapshot) bool {
-	for _, transition := range transitions {
-		if transition == candidate {
-			return true
-		}
-	}
-	return false
 }
 
 // Unregister 动态移除指定注册。

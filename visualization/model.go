@@ -1,7 +1,7 @@
 // Package visualization 提供与具体状态机实现无关的运行时可视化协议和 Server。
 //
 // 第三方状态机只需直接实现 Client；需要主动推送更新时再实现 PushClient。
-// 注册元数据由 ClientConfig 一次性声明，客户端实现接口后即可直接注册。
+// 状态机定义在注册时一次性提交，后续 pull/push 只同步实时数据。
 package visualization
 
 import (
@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -32,11 +33,11 @@ var (
 	ErrRegistrationMode = errors.New("visualization registration mode mismatch")
 )
 
-// Mode 表示 Server 获取客户端更新的方式。
+// Mode 表示 Server 获取客户端实时数据的方式。
 type Mode string
 
 const (
-	// ModePull 由 Server 按 ClientConfig.PullInterval 周期调用客户端。
+	// ModePull 由 Server 按 RegistrationConfig.PullInterval 周期调用客户端。
 	ModePull Mode = "pull"
 	// ModePush 由客户端在状态变化时调用 Server 提供的 PublishFunc。
 	ModePush Mode = "push"
@@ -50,14 +51,16 @@ type ServerConfig struct {
 	TraceLimit int
 }
 
-// ClientConfig 是客户端注册时一次性返回的元数据和工作模式。
-type ClientConfig struct {
-	ID           string
-	Name         string
-	DisplayName  string
-	Description  string
-	Path         string
-	Mode         Mode
+// RegistrationConfig 描述本次注册如何挂载和采集客户端。
+// 配置属于 Registration 生命周期，不应保存在 FSM 客户端内部。
+type RegistrationConfig struct {
+	// DisplayName 是本次注册在 Web 侧展示的名称；为空时使用 Definition.Name。
+	DisplayName string
+	// Path 是本次注册所属目录，使用 / 分隔层级。
+	Path string
+	// Mode 指定 pull 或 push；为空时根据客户端是否实现 PushClient 自动判断。
+	Mode Mode
+	// PullInterval 是 pull 周期；ModePull 下为零时默认 5 秒。
 	PullInterval time.Duration
 }
 
@@ -71,22 +74,33 @@ type Descriptor struct {
 	Path string `json:"path,omitempty"`
 }
 
-// Descriptor 返回可写入 Snapshot 的稳定描述信息。
-func (config ClientConfig) Descriptor() Descriptor {
-	return Descriptor{
-		ID:          config.ID,
-		Name:        config.Name,
-		DisplayName: config.DisplayName,
-		Description: config.Description,
-		Path:        config.Path,
-	}
-}
-
 // TransitionSnapshot 是一条与具体 FSM 类型无关的状态转移边。
 type TransitionSnapshot struct {
 	FromState string `json:"fromState"`
 	Event     string `json:"event"`
 	ToState   string `json:"toState"`
+}
+
+// Definition 是客户端注册时一次性提交的完整静态定义。
+// 注册完成后 Server 不会再次调用 VisualizationDefinition。
+type Definition struct {
+	ID          string               `json:"id"`
+	Name        string               `json:"name"`
+	Description string               `json:"describe,omitempty"`
+	States      []string             `json:"states"`
+	Events      []string             `json:"events"`
+	Transitions []TransitionSnapshot `json:"transitions"`
+}
+
+// Descriptor 返回 Definition 中稳定的实例描述。
+func (definition Definition) Descriptor(config RegistrationConfig) Descriptor {
+	return Descriptor{
+		ID:          definition.ID,
+		Name:        definition.Name,
+		DisplayName: config.DisplayName,
+		Description: definition.Description,
+		Path:        config.Path,
+	}
 }
 
 // TraceSnapshot 是一次状态转移执行结果的通用快照。
@@ -104,8 +118,23 @@ type TraceSnapshot struct {
 	Duration     time.Duration `json:"duration"`
 }
 
-// Snapshot 是 Web/API 使用的统一状态机视图。
-// 客户端只需要填写运行时字段；Server 会覆盖 Descriptor、Mode 和 UpdatedAt 默认值。
+// RealtimeData 是注册完成后 pull/push 同步的易变数据。
+// States、Events、Transitions 等静态定义不应出现在这里。
+// Traces 表示客户端当前持有的完整 trace 快照；Server 会应用 TraceLimit。
+type RealtimeData struct {
+	TransitionID    string          `json:"transitionId"`
+	CurrentState    string          `json:"currentState"`
+	PreviousState   string          `json:"previousState"`
+	PreviousEvent   string          `json:"previousEvent"`
+	ProcessingEvent string          `json:"processingEvent,omitempty"`
+	Payload         json.RawMessage `json:"payload"`
+	PayloadError    error           `json:"payloadError,omitempty"`
+	Traces          []TraceSnapshot `json:"traces,omitempty"`
+	UpdatedAt       time.Time       `json:"updatedAt"`
+}
+
+// Snapshot 是 Server 合并静态 Definition 与 RealtimeData 后提供给 Web/API 的视图。
+// 客户端不需要构造或同步该结构。
 type Snapshot struct {
 	Descriptor
 	Mode                 Mode                 `json:"mode"`
@@ -115,50 +144,55 @@ type Snapshot struct {
 	PreviousEvent        string               `json:"previousEvent"`
 	ProcessingEvent      string               `json:"processingEvent,omitempty"`
 	Payload              json.RawMessage      `json:"payload"`
-	PayloadError         string               `json:"payloadError,omitempty"`
+	PayloadError         error                `json:"payloadError,omitempty"`
 	CollectionError      string               `json:"collectionError,omitempty"`
 	States               []string             `json:"states"`
+	Events               []string             `json:"events"`
 	Transitions          []TransitionSnapshot `json:"transitions"`
 	AvailableTransitions []TransitionSnapshot `json:"availableTransitions"`
 	Traces               []TraceSnapshot      `json:"traces"`
 	UpdatedAt            time.Time            `json:"updatedAt"`
 }
 
-// Client 是 Server 定义的唯一基础注册接口。
-// pull 客户端只需实现这两个方法，然后调用 server.Register(ctx, client)。
+// Client 是 Server 定义的基础注册接口。
+// VisualizationDefinition 仅在注册时调用一次；之后只调用 VisualizationSnapshot。
 type Client interface {
-	VisualizationConfig() ClientConfig
-	VisualizationSnapshot(context.Context) (Snapshot, error)
+	VisualizationDefinition() Definition
+	VisualizationSnapshot(context.Context) (RealtimeData, error)
 }
 
-// PublishFunc 通知 Server 客户端已经变化。Server 收到通知后会重新获取 Snapshot。
-// traces 只传本次变化产生的增量记录。
-type PublishFunc func(...TraceSnapshot) error
+// PublishFunc 由 push 客户端提交最新实时数据。
+// traces 是本次变化产生的增量 trace，Server 会追加并按 TraceLimit 截断。
+type PublishFunc func(RealtimeData, ...TraceSnapshot) error
 
-// PushClient 在 Client 基础上增加状态变化订阅。
-// Server 注册时传入 PublishFunc，客户端返回取消订阅函数即可。
+// PushClient 在 Client 基础上增加实时数据订阅。
 type PushClient interface {
 	Client
 	SubscribeVisualization(PublishFunc) func()
 }
 
-func normalizeClientConfig(config ClientConfig, supportsPush bool) (ClientConfig, error) {
-	config.ID = strings.TrimSpace(config.ID)
-	if config.ID == "" || strings.ContainsAny(config.ID, "/\\") {
-		return ClientConfig{}, fmt.Errorf("%w: %q", ErrInvalidRegistrationID, config.ID)
+func normalizeRegistration(
+	definition Definition,
+	config RegistrationConfig,
+	supportsPush bool,
+) (Definition, RegistrationConfig, error) {
+	definition.ID = strings.TrimSpace(definition.ID)
+	if definition.ID == "" || strings.ContainsAny(definition.ID, "/\\") {
+		return Definition{}, RegistrationConfig{}, fmt.Errorf("%w: %q", ErrInvalidRegistrationID, definition.ID)
 	}
-	config.Name = strings.TrimSpace(config.Name)
-	if config.Name == "" {
-		config.Name = config.ID
+	definition.Name = strings.TrimSpace(definition.Name)
+	if definition.Name == "" {
+		definition.Name = definition.ID
 	}
+	definition.Description = strings.TrimSpace(definition.Description)
+
 	config.DisplayName = strings.TrimSpace(config.DisplayName)
 	if config.DisplayName == "" {
-		config.DisplayName = config.Name
+		config.DisplayName = definition.Name
 	}
-	config.Description = strings.TrimSpace(config.Description)
 	path, err := NormalizePath(config.Path)
 	if err != nil {
-		return ClientConfig{}, err
+		return Definition{}, RegistrationConfig{}, err
 	}
 	config.Path = path
 	if config.Mode == "" {
@@ -169,20 +203,59 @@ func normalizeClientConfig(config ClientConfig, supportsPush bool) (ClientConfig
 		}
 	}
 	if config.Mode != ModePull && config.Mode != ModePush {
-		return ClientConfig{}, fmt.Errorf("%w: unsupported mode %q", ErrRegistrationMode, config.Mode)
+		return Definition{}, RegistrationConfig{}, fmt.Errorf("%w: unsupported mode %q", ErrRegistrationMode, config.Mode)
 	}
 	if config.Mode == ModePush && !supportsPush {
-		return ClientConfig{}, fmt.Errorf("%w: client does not implement PushClient", ErrInvalidClient)
+		return Definition{}, RegistrationConfig{}, fmt.Errorf("%w: client does not implement PushClient", ErrInvalidClient)
 	}
 	if config.Mode == ModePull {
 		if config.PullInterval < 0 {
-			return ClientConfig{}, fmt.Errorf("%w: pull interval must not be negative", ErrInvalidClient)
+			return Definition{}, RegistrationConfig{}, fmt.Errorf("%w: pull interval must not be negative", ErrInvalidClient)
 		}
 		if config.PullInterval == 0 {
 			config.PullInterval = 5 * time.Second
 		}
 	}
-	return config, nil
+	completeDefinition(&definition)
+	return definition, config, nil
+}
+
+func completeDefinition(definition *Definition) {
+	stateSet := make(map[string]struct{}, len(definition.States))
+	eventSet := make(map[string]struct{}, len(definition.Events))
+	for _, state := range definition.States {
+		if state = strings.TrimSpace(state); state != "" {
+			stateSet[state] = struct{}{}
+		}
+	}
+	for _, event := range definition.Events {
+		if event = strings.TrimSpace(event); event != "" {
+			eventSet[event] = struct{}{}
+		}
+	}
+	for _, transition := range definition.Transitions {
+		if transition.FromState != "" {
+			stateSet[transition.FromState] = struct{}{}
+		}
+		if transition.ToState != "" {
+			stateSet[transition.ToState] = struct{}{}
+		}
+		if transition.Event != "" {
+			eventSet[transition.Event] = struct{}{}
+		}
+	}
+	definition.States = sortedSet(stateSet)
+	definition.Events = sortedSet(eventSet)
+	definition.Transitions = append([]TransitionSnapshot(nil), definition.Transitions...)
+}
+
+func sortedSet(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // NormalizePath 校验并规范化以 / 分层的注册路径。
@@ -206,9 +279,23 @@ func NormalizePath(path string) (string, error) {
 	return strings.Join(segments, "/"), nil
 }
 
+func cloneDefinition(definition Definition) Definition {
+	definition.States = append([]string(nil), definition.States...)
+	definition.Events = append([]string(nil), definition.Events...)
+	definition.Transitions = append([]TransitionSnapshot(nil), definition.Transitions...)
+	return definition
+}
+
+func cloneRealtimeData(data RealtimeData) RealtimeData {
+	data.Payload = append(json.RawMessage(nil), data.Payload...)
+	data.Traces = append([]TraceSnapshot(nil), data.Traces...)
+	return data
+}
+
 func cloneSnapshot(snapshot Snapshot) Snapshot {
 	snapshot.Payload = append(json.RawMessage(nil), snapshot.Payload...)
 	snapshot.States = append([]string(nil), snapshot.States...)
+	snapshot.Events = append([]string(nil), snapshot.Events...)
 	snapshot.Transitions = append([]TransitionSnapshot(nil), snapshot.Transitions...)
 	snapshot.AvailableTransitions = append([]TransitionSnapshot(nil), snapshot.AvailableTransitions...)
 	snapshot.Traces = append([]TraceSnapshot(nil), snapshot.Traces...)

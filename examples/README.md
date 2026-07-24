@@ -12,7 +12,7 @@ go run ./examples/basic
 
 ## 实时可视化 Server
 
-演示统一的 `server.Register(ctx, client)` 接口：本库 FSM 直接实现 `PushClient`，第三方状态机只实现 `Client` 并由 Server 定时 pull。两者通过 `path` 分入多级文件夹。
+演示统一的 `server.Register(ctx, client, config)` 接口：注册时一次性提交完整 Definition，后续仅通过 push 或 pull 同步 RealtimeData。本库 FSM 直接实现 `PushClient`，第三方状态机实现 `Client` 并由 Server 定时 pull；两者通过 `path` 分入多级文件夹。
 
 Web 页面以可拖动状态图作为全屏画布，Payload、Trace 和当前可接收事件使用可折叠透明浮层；同时支持文件夹聚合搜索、节点悬浮信息、侧栏折叠、浮层透明度调节、明暗主题切换和状态图 PNG 导出：
 

@@ -19,6 +19,18 @@ type (
 	FSMEvent string
 )
 
+func (name FSMName) String() string {
+	return string(name)
+}
+
+func (name FSMState) String() string {
+	return string(name)
+}
+
+func (name FSMEvent) String() string {
+	return string(name)
+}
+
 // EventStateKey 由事件和事件发生前的状态组成，用于唯一定位一条转移规则。
 // 同一个事件可以在不同状态下对应不同目标状态，因此不能只使用 Event 作为索引。
 type EventStateKey struct {
@@ -58,7 +70,7 @@ var (
 
 // TransitionItem 描述一条完整的状态转移规则：FromState --Event/Handler--> ToState。
 // Handler 可以为零值；此时事件仍会直接完成状态转移。
-type TransitionItem[T any] struct {
+type TransitionItem[T PayloadT] struct {
 	// Event 是触发转移的事件。
 	Event FSMEvent
 	// FromState 是转移发生前的状态。
@@ -70,7 +82,7 @@ type TransitionItem[T any] struct {
 }
 
 // NewTransitionItem 创建一条状态转移规则。
-func NewTransitionItem[T any](
+func NewTransitionItem[T PayloadT](
 	event FSMEvent,
 	fromState FSMState,
 	toState FSMState,
@@ -87,12 +99,17 @@ func NewTransitionItem[T any](
 }
 
 type (
+	// PayloadT 是业务数据类型，必须实现 JSON() 方法。
+	PayloadT interface {
+		JSON() ([]byte, error)
+	}
+
 	// Actor 是 Handler 各执行阶段的函数类型，可通过 FSM 访问状态机和业务载荷。
-	Actor[T any] func(*FSM[T]) error
+	Actor[T PayloadT] func(*FSM[T]) error
 
 	// Handler 定义一次状态转移的三阶段处理流程。
 	// 执行顺序固定为 BeforeHandler、Handler、AfterHandler；nil 阶段会被直接跳过。
-	Handler[T any] struct {
+	Handler[T PayloadT] struct {
 		// BeforeHandler 执行状态校验、权限检查或其他业务前置条件判断。
 		// 返回错误时会立即中断本次转移，后续阶段不会执行。
 		BeforeHandler Actor[T]
@@ -108,7 +125,7 @@ type (
 
 	// FSM 是一个支持泛型业务载荷的有限状态机实例。
 	// 转移规则通过 SetTransitions 注册，运行阶段通过 ProcessEvent 串行处理事件。
-	FSM[T any] struct {
+	FSM[T PayloadT] struct {
 		// instanceID 是状态机实例的稳定标识，不随转移追踪标识变化。
 		instanceID string
 		// TtId 是最近一次成功转移的追踪标识；创建实例时会生成初始标识。
@@ -149,10 +166,6 @@ type (
 		configLock sync.RWMutex
 		// runtimeObserverLock 保护可视化 Server 注册的运行时观察器。
 		runtimeObserverLock sync.RWMutex
-		// visualizationClientLock 保护可视化客户端注册配置。
-		visualizationClientLock sync.RWMutex
-		// visualizationClientConfig 保存该 FSM 对外声明的可视化元数据。
-		visualizationClientConfig fsmVisualizationConfig
 		// runtimeObservers 在事件完成后接收 trace 或快照更新通知。
 		runtimeObservers map[string]func(*TransitionTrace)
 	}
@@ -160,7 +173,7 @@ type (
 
 // NewFSM 创建状态机实例，并将 currentState 初始化为 initState。
 // payloads 是可选参数；传入多个值时只使用第一个，未传入时 Payload 为 nil。
-func NewFSM[T any](fsmName FSMName, initState FSMState, payloads ...*T) *FSM[T] {
+func NewFSM[T PayloadT](fsmName FSMName, initState FSMState, payloads ...*T) *FSM[T] {
 	fsm := &FSM[T]{
 		instanceID:        uuid.NewString(),
 		TtId:              uuid.NewString(),
@@ -179,6 +192,7 @@ func NewFSM[T any](fsmName FSMName, initState FSMState, payloads ...*T) *FSM[T] 
 			if len(payloads) > 0 {
 				return payloads[0]
 			}
+
 			return nil
 		}(),
 	}
