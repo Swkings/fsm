@@ -275,16 +275,24 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 		"opacityToggle",
 		"discoveryToggle",
 		"discoveryForm",
+		"settings-modal",
+		"settings-nav-item",
+		"discovery-form-footer",
+		"打开设置",
 		"/api/discoveries",
 		"applyOverlayTransparency",
 		"--panel-alpha: 15%",
 		"#faf9f5",
 		"#cc785c",
 	}
+	pageText := string(page)
 	for _, marker := range required {
-		if !strings.Contains(string(page), marker) {
+		if !strings.Contains(pageText, marker) {
 			t.Fatalf("web page missing %q", marker)
 		}
+	}
+	if strings.Index(pageText, "id=\"discoveryToggle\"") < strings.Index(pageText, "id=\"themeToggle\"") {
+		t.Fatal("settings toggle must be the rightmost header action")
 	}
 
 	runtimeBody := []byte(`{"currentState":"ready","payload":{"source":"http"}}`)

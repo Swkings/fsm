@@ -389,13 +389,84 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
   font-size: 11px;
   transform: translateX(-50%);
 }
+.settings-modal { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; padding: 24px; background: color-mix(in srgb, var(--surface-dark) 42%, transparent); backdrop-filter: blur(8px); }
+.settings-modal.open { display: grid; }
+.settings-shell { width: min(1040px, 100%); height: min(720px, 100%); min-height: 520px; display: grid; grid-template-rows: 64px minmax(0, 1fr); overflow: hidden; border: 1px solid var(--hairline); border-radius: 16px; background: var(--surface); box-shadow: 0 28px 80px rgba(0,0,0,.24); }
+.settings-head { display: flex; align-items: center; gap: 12px; padding: 0 20px 0 24px; border-bottom: 1px solid var(--hairline); }
+.settings-head-title { display: grid; gap: 1px; }
+.settings-head-title strong { font: 600 18px Georgia, "Times New Roman", serif; }
+.settings-head-title span { color: var(--muted); font-size: 10px; }
+.settings-close { margin-left: auto; font-size: 20px; line-height: 1; }
+.settings-layout { min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+.settings-nav { padding: 20px 12px; border-right: 1px solid var(--hairline); background: color-mix(in srgb, var(--surface-soft) 44%, var(--surface)); }
+.settings-nav-label { display: block; padding: 0 10px 8px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.settings-nav-item { width: 100%; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 1px 10px; align-items: center; padding: 9px 10px; color: var(--ink); text-align: left; border: 1px solid transparent; border-radius: 9px; background: transparent; }
+.settings-nav-item.active { border-color: color-mix(in srgb, var(--primary) 28%, var(--hairline)); background: var(--surface); box-shadow: 0 3px 12px rgba(0,0,0,.04); }
+.settings-nav-icon { grid-row: 1 / 3; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
+.settings-nav-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.settings-nav-item strong { font-size: 12px; }
+.settings-nav-item small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.settings-content { min-width: 0; overflow: auto; padding: 28px 32px 36px; }
+.settings-section-head { margin-bottom: 22px; }
+.settings-section-head h2 { margin: 0 0 5px; font: 600 22px Georgia, "Times New Roman", serif; }
+.settings-section-head p { margin: 0; color: var(--muted); font-size: 12px; }
+.settings-block { margin-top: 18px; padding: 20px; border: 1px solid var(--hairline); border-radius: 12px; background: color-mix(in srgb, var(--surface-soft) 16%, var(--surface)); }
+.settings-block-head { display: flex; align-items: start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+.settings-block-head strong { display: block; margin-bottom: 3px; font-size: 13px; }
+.settings-block-head span { color: var(--muted); font-size: 10px; }
+.settings-block-badge { flex: 0 0 auto; padding: 3px 7px; border-radius: 999px; background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success) !important; font-size: 9px !important; font-weight: 650; }
+.discovery-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+.discovery-field { min-width: 0; }
+.discovery-field.wide { grid-column: 1 / -1; }
+.discovery-field label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 600; }
+.discovery-field input { width: 100%; height: 38px; padding: 0 11px; color: var(--ink); border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface); outline: none; transition: border-color .15s, box-shadow .15s; }
+.discovery-field input::placeholder { color: color-mix(in srgb, var(--muted) 62%, transparent); }
+.discovery-field input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 13%, transparent); }
+.discovery-form-footer { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding-top: 2px; }
+.discovery-submit, .discovery-action { min-height: 34px; padding: 0 13px; border: 1px solid color-mix(in srgb, var(--primary) 70%, var(--hairline)); border-radius: 8px; background: var(--primary); color: #fff; font-size: 11px; font-weight: 650; cursor: pointer; }
+.discovery-submit:hover { filter: brightness(.95); }
+.discovery-submit:disabled { cursor: wait; opacity: .55; }
+.discovery-form-status { color: var(--success); font-size: 10px; }
+.discovery-form-status.error { color: var(--danger); }
+.discovery-list { display: grid; gap: 10px; }
+.discovery-empty { padding: 26px; border: 1px dashed var(--hairline); border-radius: 10px; color: var(--muted); text-align: center; font-size: 11px; }
+.discovery-item { position: relative; padding: 15px 16px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); }
+.discovery-item-head { min-width: 0; display: flex; align-items: center; gap: 8px; padding-right: 160px; }
+.discovery-item-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.discovery-status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 12%, transparent); }
+.discovery-status-dot.error { background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 12%, transparent); }
+.discovery-item-count { margin-left: auto; color: var(--success); font: 600 9px ui-monospace, monospace; white-space: nowrap; }
+.discovery-item-meta { margin: 7px 0 0 15px; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font: 9px ui-monospace, monospace; }
+.discovery-item-error { margin: 9px 160px 0 15px; padding: 7px 9px; border-radius: 6px; background: color-mix(in srgb, var(--danger) 9%, transparent); color: var(--danger); font-size: 9px; overflow-wrap: anywhere; }
+.discovery-actions { position: absolute; top: 50%; right: 14px; display: flex; gap: 7px; transform: translateY(-50%); }
+.discovery-action { min-height: 30px; padding: 0 10px; border-color: var(--hairline); background: transparent; color: var(--ink); font-size: 10px; font-weight: 600; }
+.discovery-action:hover { border-color: var(--primary); color: var(--primary); }
+.discovery-action.danger:hover { border-color: var(--danger); color: var(--danger); }
 @media (max-width: 820px) {
   :root { --sidebar-width: 230px; }
   .payload-panel { width: min(310px, calc(100% - 24px)); }
   .available-panel { max-width: calc(100% - 24px); right: 12px; }
   .canvas-hint { display: none; }
+  .settings-modal { padding: 12px; }
+  .settings-shell { height: min(760px, 100%); }
+  .settings-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .settings-nav { padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--hairline); }
+  .settings-nav-label, .settings-nav-item small { display: none; }
+  .settings-nav-item { width: auto; display: inline-grid; grid-template-columns: 24px auto; padding: 6px 10px; }
+  .settings-nav-icon { grid-row: auto; width: 24px; height: 24px; background: transparent; }
+  .settings-content { padding: 22px 20px 28px; }
   .discovery-form { grid-template-columns: 1fr; }
-  .discovery-field.wide { grid-column: auto; }
+  .discovery-field.wide, .discovery-form-footer { grid-column: auto; }
+  .discovery-item-head { padding-right: 0; }
+  .discovery-item-meta, .discovery-item-error { margin-right: 0; }
+  .discovery-actions { position: static; margin: 12px 0 0 15px; transform: none; }
+}
+@media (max-width: 520px) {
+  .settings-modal { padding: 0; }
+  .settings-shell { width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; }
+  .settings-content { padding: 18px 14px 24px; }
+  .settings-block { padding: 15px; }
+  .discovery-form-footer { align-items: stretch; flex-direction: column; }
 }
 </style>
 </head>
@@ -409,9 +480,6 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
   <div id="sidebarResize" class="resize-handle" role="separator" aria-label="调整状态机列表宽度" aria-orientation="vertical" tabindex="0"></div>
   <main class="workspace">
     <header class="topbar">
-      <button id="discoveryToggle" class="icon-button" type="button" aria-label="服务发现配置" title="服务发现配置">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2"></circle><circle cx="18" cy="6" r="2"></circle><circle cx="18" cy="18" r="2"></circle><path d="M8 11l8-4M8 13l8 4"></path></svg>
-      </button>
       <div id="opacityControl" class="opacity-control">
         <button id="opacityToggle" class="icon-button" type="button" aria-label="调节浮层透明度" title="调节浮层透明度" aria-expanded="false">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3s5 6 5 10a5 5 0 0 1-10 0c0-4 5-10 5-10z"></path><path d="M9 14.5c.7 1.3 1.7 2 3 2"></path></svg>
@@ -425,6 +493,9 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
       <button id="themeToggle" class="icon-button" type="button" aria-label="切换主题" title="切换主题">
         <svg class="theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"></path></svg>
         <svg class="theme-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7z"></path></svg>
+      </button>
+      <button id="discoveryToggle" class="icon-button" type="button" aria-label="打开设置" title="设置" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.86 1.86-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.6v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.88.34l-.06.06-1.86-1.86.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-1.5-1H5.9v-2.6H6a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06L8.96 6.6l.06.06A1.7 1.7 0 0 0 10.9 7a1.7 1.7 0 0 0 1-1.5v-.1h2.6v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.86 1.86-.06.06A1.7 1.7 0 0 0 18.9 10.4a1.7 1.7 0 0 0 1.5 1h.1V14h-.1a1.7 1.7 0 0 0-1 .6z"></path></svg>
       </button>
     </header>
     <div id="empty" class="empty"><div><strong>等待 FSM 注册</strong><span>注册完成后将在此显示状态图。</span></div></div>
@@ -474,23 +545,43 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
     </div>
   </main>
 </div>
-<div id="discoveryModal" class="discovery-modal" role="dialog" aria-modal="true" aria-labelledby="discoveryTitle">
-  <section class="discovery-card">
-    <div class="discovery-head">
-      <div><strong id="discoveryTitle">服务发现</strong><br><span>由 Server 发现远程 FSM 并主动拉取实时数据</span></div>
-      <button id="discoveryClose" class="icon-button discovery-close" type="button" aria-label="关闭服务发现配置" title="关闭">×</button>
+<div id="discoveryModal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <section class="settings-shell">
+    <header class="settings-head">
+      <div class="settings-head-title"><strong id="settingsTitle">设置</strong><span>管理 Observatory 的连接与运行选项</span></div>
+      <button id="discoveryClose" class="icon-button settings-close" type="button" aria-label="关闭设置" title="关闭">×</button>
+    </header>
+    <div class="settings-layout">
+      <nav class="settings-nav" aria-label="设置分类">
+        <span class="settings-nav-label">连接</span>
+        <button class="settings-nav-item active" type="button" aria-current="page">
+          <span class="settings-nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2"></circle><circle cx="18" cy="6" r="2"></circle><circle cx="18" cy="18" r="2"></circle><path d="M8 11l8-4M8 13l8 4"></path></svg></span>
+          <strong>服务发现</strong><small>远程 FSM 与 Pull 配置</small>
+        </button>
+      </nav>
+      <main class="settings-content">
+        <div class="settings-section-head">
+          <h2 id="discoveryTitle">服务发现</h2>
+          <p>由 Server 自动发现远程 FSM，并持续拉取实时状态数据。</p>
+        </div>
+        <section class="settings-block" aria-labelledby="addDiscoveryTitle">
+          <div class="settings-block-head"><div><strong id="addDiscoveryTitle">添加发现源</strong><span>填写注册中心提供的 HTTP 发现接口与同步周期。</span></div><span class="settings-block-badge">HTTP</span></div>
+          <form id="discoveryForm" class="discovery-form">
+            <div class="discovery-field"><label for="discoveryId">配置 ID</label><input id="discoveryId" name="id" required placeholder="production-services"></div>
+            <div class="discovery-field"><label for="discoveryName">显示名称</label><input id="discoveryName" name="name" placeholder="Production Services"></div>
+            <div class="discovery-field wide"><label for="discoveryEndpoint">发现接口地址</label><input id="discoveryEndpoint" name="endpoint" type="url" required placeholder="http://registry:8080/fsm-services"></div>
+            <div class="discovery-field wide"><label for="discoveryPathPrefix">目录前缀</label><input id="discoveryPathPrefix" name="pathPrefix" placeholder="production/discovered"></div>
+            <div class="discovery-field"><label for="discoveryRefresh">发现周期（秒）</label><input id="discoveryRefresh" name="refreshIntervalSeconds" type="number" min="0.1" step="0.1" value="30"></div>
+            <div class="discovery-field"><label for="discoveryPull">Pull 周期（秒）</label><input id="discoveryPull" name="pullIntervalSeconds" type="number" min="0.1" step="0.1" value="5"></div>
+            <div class="discovery-form-footer"><button id="discoverySubmit" class="discovery-submit" type="submit">添加发现配置</button><span id="discoveryFormStatus" class="discovery-form-status" role="status"></span></div>
+          </form>
+        </section>
+        <section class="settings-block" aria-labelledby="configuredDiscoveryTitle">
+          <div class="settings-block-head"><div><strong id="configuredDiscoveryTitle">已配置的发现源</strong><span>查看同步状态，或手动触发一次服务发现。</span></div></div>
+          <div id="discoveryList" class="discovery-list"></div>
+        </section>
+      </main>
     </div>
-    <form id="discoveryForm" class="discovery-form">
-      <div class="discovery-field"><label for="discoveryId">配置 ID</label><input id="discoveryId" name="id" required placeholder="production-services"></div>
-      <div class="discovery-field"><label for="discoveryName">显示名称</label><input id="discoveryName" name="name" placeholder="Production Services"></div>
-      <div class="discovery-field wide"><label for="discoveryEndpoint">发现接口地址</label><input id="discoveryEndpoint" name="endpoint" type="url" required placeholder="http://registry:8080/fsm-services"></div>
-      <div class="discovery-field wide"><label for="discoveryPathPrefix">目录前缀</label><input id="discoveryPathPrefix" name="pathPrefix" placeholder="production/discovered"></div>
-      <div class="discovery-field"><label for="discoveryRefresh">发现周期（秒）</label><input id="discoveryRefresh" name="refreshIntervalSeconds" type="number" min="0.1" step="0.1" value="30"></div>
-      <div class="discovery-field"><label for="discoveryPull">Pull 周期（秒）</label><input id="discoveryPull" name="pullIntervalSeconds" type="number" min="0.1" step="0.1" value="5"></div>
-      <button id="discoverySubmit" class="discovery-submit" type="submit">添加发现配置</button>
-      <span id="discoveryFormStatus" class="discovery-form-status"></span>
-    </form>
-    <div id="discoveryList" class="discovery-list"></div>
   </section>
 </div>
 <script>
@@ -978,10 +1069,10 @@ async function deleteDiscovery(id){
     await Promise.all([loadDiscoveries(),loadFSMs()]);
   }catch(error){discoveryStatus(error.message||String(error),true)}
 }
-function closeDiscoveryModal(){byId("discoveryModal").classList.remove("open")}
+function closeDiscoveryModal(){const modal=byId("discoveryModal");if(!modal.classList.contains("open"))return;modal.classList.remove("open");byId("discoveryToggle").setAttribute("aria-expanded","false");byId("discoveryToggle").focus()}
 function initializeDiscovery(){
   const modal=byId("discoveryModal");
-  byId("discoveryToggle").onclick=()=>{modal.classList.add("open");loadDiscoveries();byId("discoveryId").focus()};
+  byId("discoveryToggle").onclick=()=>{modal.classList.add("open");byId("discoveryToggle").setAttribute("aria-expanded","true");loadDiscoveries();window.requestAnimationFrame(()=>byId("discoveryId").focus())};
   byId("discoveryClose").onclick=closeDiscoveryModal;
   modal.addEventListener("pointerdown",event=>{if(event.target===modal)closeDiscoveryModal()});
   document.addEventListener("keydown",event=>{if(event.key==="Escape")closeDiscoveryModal()});

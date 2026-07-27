@@ -259,7 +259,7 @@ Server 会自动完成以下操作：
 - 服务从发现结果中消失：自动注销对应 FSM。
 - 拉取失败：保留静态状态图和最后一次实时数据，并通过 `collectionError` 展示错误。
 
-Web Header 的服务发现图标可以直接配置 HTTP 发现地址、目录前缀、发现周期和 pull 周期，并查看已发现数量、已注册数量和最近错误。对应 API 为 `GET/POST /api/discoveries`、`POST /api/discoveries/{id}/refresh` 和 `DELETE /api/discoveries/{id}`。这些配置会让 Server 访问指定网络地址，公开部署时必须为配置 API 增加鉴权和网络访问限制。
+Web Header 最右侧的设置图标可进入设置页，并在“服务发现”设置栏中配置 HTTP 发现地址、目录前缀、发现周期和 pull 周期，并查看已发现数量、已注册数量和最近错误。对应 API 为 `GET/POST /api/discoveries`、`POST /api/discoveries/{id}/refresh` 和 `DELETE /api/discoveries/{id}`。这些配置会让 Server 访问指定网络地址，公开部署时必须为配置 API 增加鉴权和网络访问限制。
 
 Web 页面实时展示：
 

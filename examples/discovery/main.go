@@ -74,7 +74,7 @@ func main() {
 }
 
 func serveRemoteClient(worker *remoteWorker) (string, func(), error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", "127.0.0.1:5009")
 	if err != nil {
 		return "", nil, err
 	}
