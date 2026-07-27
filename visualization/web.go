@@ -215,7 +215,7 @@ body.resizing { cursor: col-resize; user-select: none; }
   cursor: pointer;
 }
 .icon-button:hover { color: var(--primary); border-color: var(--primary); }
-.icon-button:focus-visible, .resize-handle:focus-visible, .fsm-button:focus-visible, summary:focus-visible, .panel-toggle:focus-visible {
+.icon-button:focus-visible, .resize-handle:focus-visible, .fsm-button:focus-visible, summary:focus-visible, .detail-tab:focus-visible, .panel-close:focus-visible, .trace-toggle:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
@@ -265,22 +265,28 @@ body.resizing { cursor: col-resize; user-select: none; }
 .graph-node.current rect { fill: color-mix(in srgb, var(--success) 14%, var(--graph-node)); stroke: var(--success); stroke-width: 3; }
 .graph-node.previous rect { stroke: var(--primary); }
 @keyframes edge-flow { to { stroke-dashoffset: -17; } }
-.canvas-tools { position: absolute; right: 12px; top: 50%; bottom: auto; transform: translateY(-50%); z-index: 8; display: flex; gap: 7px; }
-.canvas-hint {
+.canvas-toolbar {
   position: absolute;
-  left: 50%;
-  bottom: 12px;
-  z-index: 7;
-  padding: 5px 9px;
+  top: 45%;
+  right: 12px;
+  z-index: 14;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
   border: 1px solid color-mix(in srgb, var(--graph-line) 45%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 46%, transparent);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
   color: var(--graph-muted);
-  font-size: 10px;
-  transform: translateX(-50%);
-  pointer-events: none;
-  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 22px rgba(0,0,0,.1);
+  transform: translateY(-50%);
+  backdrop-filter: blur(10px);
 }
+.canvas-toolbar .icon-button { width: 30px; height: 30px; border: 0; background: transparent; }
+.canvas-toolbar .icon-button:hover { background: color-mix(in srgb, var(--surface) 75%, transparent); }
+.canvas-toolbar-value { min-width: 40px; color: var(--graph-muted); text-align: center; font: 600 9px ui-monospace, monospace; }
+.canvas-toolbar-separator { width: 18px; height: 1px; margin: 2px 0; background: var(--hairline); }
 .node-tooltip {
   position: absolute;
   z-index: 40;
@@ -300,9 +306,33 @@ body.resizing { cursor: col-resize; user-select: none; }
 .node-tooltip strong { display: block; margin-bottom: 6px; font: 600 14px Georgia, "Times New Roman", serif; }
 .node-tooltip-row { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); font-size: 10px; }
 .node-tooltip-row span:last-child { color: var(--ink); text-align: right; }
-.floating-panel {
+.detail-nav {
   position: absolute;
+  top: 14px;
+  left: 50%;
   z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) var(--panel-alpha), transparent);
+  box-shadow: 0 10px 28px rgba(0,0,0,var(--panel-shadow));
+  transform: translateX(-50%);
+  backdrop-filter: blur(var(--panel-blur));
+}
+.detail-tab { min-height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 11px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.detail-tab:hover { color: var(--ink); background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.detail-tab.active { background: var(--surface); color: var(--ink); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.detail-tab strong { font: 600 11px Georgia, "Times New Roman", serif; }
+.detail-tab .panel-summary { margin-left: 0; }
+.panel-close { width: 24px; height: 24px; flex: 0 0 auto; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.panel-close:hover { border-color: var(--hairline); background: color-mix(in srgb, var(--surface) 60%, transparent); color: var(--primary); }
+.panel-close svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.monitor-panel {
+  position: absolute;
+  z-index: 11;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent);
   border-radius: 11px;
@@ -310,35 +340,34 @@ body.resizing { cursor: col-resize; user-select: none; }
   color: var(--ink);
   box-shadow: 0 10px 28px rgba(0,0,0,var(--panel-shadow));
   backdrop-filter: blur(var(--panel-blur));
-  transition: width .18s, height .18s, max-height .18s;
 }
-.payload-panel { top: 14px; right: 14px; width: min(350px, calc(100% - 28px)); max-height: calc(100% - 28px); }
-.trace-panel { right: 14px; bottom: 14px; left: 14px; max-height: min(285px, 42%); }
-.panel-toggle {
-  width: 100%;
-  min-height: 38px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 12px;
-  color: inherit;
-  border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent);
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-}
-.panel-toggle strong { font: 600 13px Georgia, "Times New Roman", serif; }
-.panel-summary { margin-left: auto; color: var(--muted); font-size: 10px; }
-.panel-chevron { color: var(--primary); transition: transform .15s; }
-.floating-panel.collapsed { width: auto; max-height: 40px; }
-.trace-panel.collapsed { left: auto; }
-.floating-panel.collapsed .panel-toggle { border-bottom-color: transparent; }
-.floating-panel.collapsed .panel-body { display: none; }
-.floating-panel.collapsed .panel-chevron { transform: rotate(-90deg); }
+.monitor-panel-head { min-height: 38px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border-bottom: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent); }
+.monitor-panel-head strong, .trace-title strong { font: 600 12px Georgia, "Times New Roman", serif; }
+.panel-summary { margin-left: auto; color: var(--muted); font: 9px ui-monospace, monospace; }
+.available-panel { top: 60px; left: 14px; width: min(520px, calc(50% - 21px)); }
+.payload-panel { top: 60px; right: 14px; width: min(420px, calc(50% - 21px)); max-height: calc(100% - 86px); }
 .panel-body { overflow: auto; }
-.payload-panel .panel-body { max-height: calc(100vh - 110px); padding: 12px; }
-.trace-panel .panel-body { max-height: 245px; }
+.available-panel .panel-body, .payload-panel .panel-body { padding: 12px; }
+.payload-panel .panel-body { max-height: calc(100vh - 180px); }
+.trace-panel { right: 14px; bottom: 14px; left: 14px; z-index: 13; height: 40px; transition: height .18s ease; }
+.trace-panel.expanded { height: min(320px, 42%); }
+.trace-status-bar { height: 39px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 0 8px 0 12px; }
+.trace-title { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.trace-title .panel-summary { margin-left: 0; }
+.trace-latest { min-width: 0; display: flex; align-items: center; gap: 10px; overflow: hidden; color: var(--muted); font-size: 10px; }
+.trace-latest > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trace-latest-event { color: var(--primary); font: 650 10px ui-monospace, monospace; }
+.trace-latest-result.ok { color: var(--success); }
+.trace-latest-result.fail { color: var(--danger); }
+.trace-latest-empty { color: var(--muted); }
+.trace-toggle { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.trace-toggle:hover { border-color: var(--hairline); background: color-mix(in srgb, var(--surface) 60%, transparent); color: var(--primary); }
+.trace-toggle svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.trace-collapse-icon { display: none; }
+.trace-panel.expanded .trace-expand-icon { display: none; }
+.trace-panel.expanded .trace-collapse-icon { display: block; }
+.trace-history { display: none; height: calc(100% - 39px); overflow: auto; border-top: 1px solid color-mix(in srgb, var(--hairline) 72%, transparent); }
+.trace-panel.expanded .trace-history { display: block; }
 .payload-error { display: none; margin-bottom: 8px; color: var(--warning); font-size: 11px; }
 pre { max-height: 270px; margin: 0; overflow: auto; color: var(--code); white-space: pre-wrap; word-break: break-word; font: 11px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 12px; }
@@ -351,20 +380,7 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
 .ok { color: var(--success); }
 .fail, .trace-error { color: var(--danger); }
 .trace-error { max-width: 260px; white-space: normal; }
-.available-panel {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  z-index: 10;
-  max-width: min(520px, calc(100% - 400px));
-  padding: 0;
-  border: 1px solid color-mix(in srgb, var(--graph-line) 45%, transparent);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--surface) var(--panel-alpha), transparent);
-  color: var(--ink);
-  backdrop-filter: blur(var(--panel-blur));
-}
-.available-panel .panel-body { padding: 0 10px 10px; }
+
 .available-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: #aaa39a; font-size: 10px; }
 .available-head span { margin-left: auto; }
 .available-list { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -444,9 +460,10 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
 .discovery-action.danger:hover { border-color: var(--danger); color: var(--danger); }
 @media (max-width: 820px) {
   :root { --sidebar-width: 230px; }
-  .payload-panel { width: min(310px, calc(100% - 24px)); }
-  .available-panel { max-width: calc(100% - 24px); right: 12px; }
-  .canvas-hint { display: none; }
+  .available-panel { left: 12px; width: calc(50% - 18px); }
+  .payload-panel { right: 12px; width: calc(50% - 18px); }
+  .trace-panel { right: 12px; bottom: 12px; left: 12px; }
+  .canvas-toolbar { right: 10px; }
   .settings-modal { padding: 12px; }
   .settings-shell { height: min(760px, 100%); }
   .settings-layout { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
@@ -462,6 +479,8 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
   .discovery-actions { position: static; margin: 12px 0 0 15px; transform: none; }
 }
 @media (max-width: 520px) {
+  .trace-status-bar { gap: 8px; }
+  .trace-latest span:first-child, .trace-latest span:last-child { display: none; }
   .settings-modal { padding: 0; }
   .settings-shell { width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 0; }
   .settings-content { padding: 18px 14px 24px; }
@@ -505,17 +524,18 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
         <div id="nodeTooltip" class="node-tooltip" role="tooltip"></div>
         <div id="collectionError" class="collection-error"></div>
 
-        <section id="availablePanel" class="floating-panel available-panel collapsed">
-          <button class="panel-toggle" type="button" data-panel="availablePanel" aria-expanded="false">
-            <span class="panel-chevron">▾</span><strong>可接收事件</strong><span id="availableCount" class="panel-summary"></span>
-          </button>
+        <nav class="detail-nav" aria-label="FSM 详情面板">
+          <button id="activeEventToggle" class="detail-tab active" type="button" data-panel="availablePanel" aria-controls="availablePanel" aria-expanded="true"><strong>Active Event</strong><span id="availableNavCount" class="panel-summary"></span></button>
+          <button id="payloadToggle" class="detail-tab active" type="button" data-panel="payloadPanel" aria-controls="payloadPanel" aria-expanded="true"><strong>Payload</strong><span id="payloadNavSummary" class="panel-summary"></span></button>
+        </nav>
+
+        <section id="availablePanel" class="monitor-panel available-panel" aria-labelledby="activeEventTitle">
+          <div class="monitor-panel-head"><strong id="activeEventTitle">Active Event</strong><span id="availableCount" class="panel-summary"></span><button class="panel-close" type="button" data-panel="availablePanel" aria-label="关闭 Active Event" title="关闭 Active Event"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
           <div class="panel-body"><div id="availableTransitions" class="available-list"></div></div>
         </section>
 
-        <section id="payloadPanel" class="floating-panel payload-panel collapsed">
-          <button class="panel-toggle" type="button" data-panel="payloadPanel" aria-expanded="false">
-            <span class="panel-chevron">▾</span><strong>Payload</strong><span id="payloadPanelSummary" class="panel-summary"></span>
-          </button>
+        <section id="payloadPanel" class="monitor-panel payload-panel" aria-labelledby="payloadTitle">
+          <div class="monitor-panel-head"><strong id="payloadTitle">Payload</strong><span id="payloadPanelSummary" class="panel-summary"></span><button class="panel-close" type="button" data-panel="payloadPanel" aria-label="关闭 Payload" title="关闭 Payload"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button></div>
           <div class="panel-body">
             <div id="payloadError" class="payload-error"></div>
             <pre id="payload"></pre>
@@ -528,19 +548,28 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
           </div>
         </section>
 
-        <section id="tracePanel" class="floating-panel trace-panel collapsed">
-          <button class="panel-toggle" type="button" data-panel="tracePanel" aria-expanded="false">
-            <span class="panel-chevron">▾</span><strong>Trace</strong><span id="traceCount" class="panel-summary"></span>
-          </button>
-          <div class="panel-body">
+        <section id="tracePanel" class="monitor-panel trace-panel" aria-labelledby="traceTitle">
+          <div class="trace-status-bar">
+            <div class="trace-title"><strong id="traceTitle">Trace</strong><span id="traceCount" class="panel-summary"></span></div>
+            <div id="traceLatest" class="trace-latest"><span class="trace-latest-empty">暂无 Trace</span></div>
+            <button id="traceToggle" class="trace-toggle" type="button" aria-label="展开完整 Trace" title="展开完整 Trace" aria-expanded="false">
+              <svg class="trace-expand-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"></path></svg>
+              <svg class="trace-collapse-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg>
+            </button>
+          </div>
+          <div class="trace-history">
             <table><thead><tr><th>时间</th><th>事件</th><th>状态流转</th><th>结果</th><th>耗时</th><th>错误</th></tr></thead><tbody id="traceBody"></tbody></table>
           </div>
         </section>
 
-        <div class="canvas-tools">
+        <div class="canvas-toolbar" role="toolbar" aria-label="状态图画布工具">
+          <button id="zoomOutGraph" class="icon-button" type="button" aria-label="缩小状态图" title="缩小"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M8 11h6M16 16l5 5"></path></svg></button>
+          <span id="graphZoomValue" class="canvas-toolbar-value">100%</span>
+          <button id="zoomInGraph" class="icon-button" type="button" aria-label="放大状态图" title="放大"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M8 11h6M11 8v6M16 16l5 5"></path></svg></button>
+          <button id="resetGraph" class="icon-button" type="button" aria-label="恢复默认 FSM 图" title="恢复默认 FSM 图"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 15v5h-5M5.5 5.5A8 8 0 0 1 19 9M18.5 18.5A8 8 0 0 1 5 15"></path></svg></button>
+          <span class="canvas-toolbar-separator" aria-hidden="true"></span>
           <button id="exportGraph" class="icon-button" type="button" aria-label="导出状态图 PNG" title="导出状态图 PNG"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"></path></svg></button>
         </div>
-        <div class="canvas-hint">拖动画布移动状态图 · 双击复位</div>
       </section>
     </div>
   </main>
@@ -585,7 +614,7 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
   </section>
 </div>
 <script>
-const app={fsms:[],discoveries:[],selected:"",query:"",graphOffsets:{}};
+const app={fsms:[],discoveries:[],selected:"",query:"",graphOffsets:{},pendingGraphRender:null};
 const byId=id=>document.getElementById(id);
 function readPreference(key){try{return localStorage.getItem(key)||""}catch(error){return ""}}
 function writePreference(key,value){try{if(value==="")localStorage.removeItem(key);else localStorage.setItem(key,value)}catch(error){}}
@@ -597,7 +626,7 @@ function text(id,value){byId(id).textContent=value===undefined||value===null?"":
 function formatTime(value){if(!value)return "-";return new Date(value).toLocaleString()}
 function formatNanos(value){if(!value)return "0 ms";if(value<1000)return value+" ns";if(value<1000000)return (value/1000).toFixed(2)+" μs";return (value/1000000).toFixed(2)+" ms"}
 async function loadFSMs(){try{const response=await fetch("/api/fsms",{cache:"no-store"});if(!response.ok)throw new Error(response.statusText);app.fsms=await response.json();if(!app.fsms.some(item=>item.id===app.selected))app.selected=app.fsms.length?app.fsms[0].id:"";render()}catch(error){console.error(error)}}
-function render(){renderList();const current=app.fsms.find(item=>item.id===app.selected);byId("empty").style.display=current?"none":"grid";byId("content").classList.toggle("visible",Boolean(current));byId("exportGraph").disabled=!current;if(!current)return;renderDetail(current)}
+function render(){renderList();const current=app.fsms.find(item=>item.id===app.selected);byId("empty").style.display=current?"none":"grid";byId("content").classList.toggle("visible",Boolean(current));setGraphToolsDisabled(!current);if(!current)return;renderDetail(current)}
 function buildFolderTree(items){
   const root={name:"",path:"",folders:new Map(),items:[]};
   for(const item of items){
@@ -686,7 +715,7 @@ function renderList(){
 function renderDetail(item){
   const transitions=item.transitions||[];
   const traces=item.traces||[];
-  text("payloadPanelSummary",(item.currentState||"empty")+" · "+(item.mode||"push"));
+  const payloadSummary=(item.currentState||"empty")+" · "+(item.mode||"push");text("payloadPanelSummary",payloadSummary);text("payloadNavSummary",payloadSummary);
   text("traceCount",traces.length+" traces");
   text("transitionId",item.transitionId);
   text("updatedAt",formatTime(item.updatedAt));
@@ -746,12 +775,31 @@ function showNodeTooltip(event,state,item){
   moveNodeTooltip(event);
 }
 function hideNodeTooltip(){byId("nodeTooltip").classList.remove("visible")}
-function applyGraphOffset(stage,offset){
-  stage.style.transform="translate(calc(-50% + "+offset.x+"px), calc(-50% + "+offset.y+"px))";
+function graphViewFor(key){
+  const view=app.graphOffsets[key]||{x:0,y:0,zoom:1};
+  if(!Number.isFinite(view.zoom))view.zoom=1;
+  app.graphOffsets[key]=view;
+  return view;
 }
+function applyGraphOffset(stage,offset){
+  stage.style.transform="translate(calc(-50% + "+offset.x+"px), calc(-50% + "+offset.y+"px)) scale("+offset.zoom+")";
+  text("graphZoomValue",Math.round(offset.zoom*100)+"%");
+}
+function setGraphToolsDisabled(disabled){
+  for(const id of ["zoomOutGraph","zoomInGraph","resetGraph","exportGraph"])byId(id).disabled=disabled;
+}
+function mutateStateGraphView(callback){
+  const current=app.fsms.find(item=>item.id===app.selected);
+  const stage=byId("stateGraph").querySelector(".graph-stage");
+  if(!current||!stage)return;
+  const view=graphViewFor(current.id||"fsm");
+  callback(view);
+  applyGraphOffset(stage,view);
+}
+function zoomStateGraph(delta){mutateStateGraphView(view=>{view.zoom=Math.max(.5,Math.min(2,Math.round((view.zoom+delta)*100)/100))})}
+function resetStateGraphView(){mutateStateGraphView(view=>{view.x=0;view.y=0;view.zoom=1})}
 function setupGraphPan(host,stage,key){
-  const offset=app.graphOffsets[key]||{x:0,y:0};
-  app.graphOffsets[key]=offset;
+  const offset=graphViewFor(key);
   applyGraphOffset(stage,offset);
   let dragging=false;
   let pointerID=0;
@@ -761,6 +809,7 @@ function setupGraphPan(host,stage,key){
   let startY=0;
   host.onpointerdown=event=>{
     if(event.button!==0)return;
+    app.pendingGraphRender=null;
     dragging=true;
     pointerID=event.pointerId;
     originX=event.clientX;
@@ -783,6 +832,9 @@ function setupGraphPan(host,stage,key){
     dragging=false;
     host.classList.remove("dragging");
     if(host.hasPointerCapture(pointerID))host.releasePointerCapture(pointerID);
+    const pending=app.pendingGraphRender;
+    app.pendingGraphRender=null;
+    if(pending)window.requestAnimationFrame(()=>renderStateGraph(pending));
   };
   host.onpointerup=stop;
   host.onpointercancel=stop;
@@ -790,11 +842,17 @@ function setupGraphPan(host,stage,key){
     if(event.target.closest&&event.target.closest(".graph-node"))return;
     offset.x=0;
     offset.y=0;
+    offset.zoom=1;
     applyGraphOffset(stage,offset);
   };
 }
 function renderStateGraph(item){
   const host=byId("stateGraph");
+  if(host.classList.contains("dragging")){
+    app.pendingGraphRender=item;
+    return;
+  }
+  app.pendingGraphRender=null;
   host.replaceChildren();
   hideNodeTooltip();
   const transitions=item.transitions||[];
@@ -805,6 +863,7 @@ function renderStateGraph(item){
     empty.className="available-empty";
     empty.textContent="尚未配置状态";
     host.appendChild(empty);
+    setGraphToolsDisabled(true);
     return;
   }
   const radius=Math.max(155,Math.min(360,states.length*38));
@@ -911,26 +970,80 @@ function renderStateGraph(item){
   stage.appendChild(svg);
   host.appendChild(stage);
   setupGraphPan(host,stage,item.id||"fsm");
+  setGraphToolsDisabled(false);
 }
-function renderAvailableTransitions(item){const list=byId("availableTransitions");list.replaceChildren();const available=item.availableTransitions||(item.transitions||[]).filter(edge=>edge.fromState===item.currentState);text("availableCount",available.length+" events");if(!available.length){const empty=document.createElement("div");empty.className="available-empty";empty.textContent="当前状态没有可接收的事件";list.appendChild(empty);return}for(const edge of available){const row=document.createElement("div");const processing=String(edge.event)===String(item.processingEvent||"");row.className="available-transition"+(processing?" processing":"");const event=document.createElement("span");event.className="event-token";event.textContent=edge.event;const arrow=document.createElement("span");arrow.textContent="→";arrow.style.color="var(--muted)";const target=document.createElement("span");target.className="target-state";target.textContent=edge.toState;row.append(event,arrow,target);list.appendChild(row)}}
+function renderAvailableTransitions(item){const list=byId("availableTransitions");list.replaceChildren();const available=item.availableTransitions||(item.transitions||[]).filter(edge=>edge.fromState===item.currentState);text("availableCount",available.length+" events");text("availableNavCount",String(available.length));if(!available.length){const empty=document.createElement("div");empty.className="available-empty";empty.textContent="当前状态没有可接收的事件";list.appendChild(empty);return}for(const edge of available){const row=document.createElement("div");const processing=String(edge.event)===String(item.processingEvent||"");row.className="available-transition"+(processing?" processing":"");const event=document.createElement("span");event.className="event-token";event.textContent=edge.event;const arrow=document.createElement("span");arrow.textContent="→";arrow.style.color="var(--muted)";const target=document.createElement("span");target.className="target-state";target.textContent=edge.toState;row.append(event,arrow,target);list.appendChild(row)}}
 function inlineSVGStyles(source,target){const properties=["fill","stroke","stroke-width","stroke-dasharray","stroke-dashoffset","stroke-linecap","stroke-linejoin","opacity","filter","font-family","font-size","font-weight","letter-spacing","text-anchor","dominant-baseline","paint-order"];const sourceNodes=[source,...source.querySelectorAll("*")];const targetNodes=[target,...target.querySelectorAll("*")];for(let index=0;index<sourceNodes.length;index++){const computed=getComputedStyle(sourceNodes[index]);const declarations=[];for(const property of properties){const value=computed.getPropertyValue(property);if(value)declarations.push(property+":"+value)}if(declarations.length)targetNodes[index].setAttribute("style",declarations.join(";"))}}
 function exportStateGraph(){const button=byId("exportGraph");const source=byId("stateGraph").querySelector("svg");if(!source||button.disabled)return;button.disabled=true;try{const clone=source.cloneNode(true);inlineSVGStyles(source,clone);const viewBox=source.viewBox.baseVal;const width=Math.max(1,Math.ceil(viewBox.width));const height=Math.max(1,Math.ceil(viewBox.height));clone.setAttribute("xmlns","http://www.w3.org/2000/svg");clone.setAttribute("width",String(width));clone.setAttribute("height",String(height));const backgroundColor=getComputedStyle(document.documentElement).getPropertyValue("--graph-bg").trim()||"#ffffff";clone.insertBefore(svgElement("rect",{x:viewBox.x,y:viewBox.y,width:width,height:height,fill:backgroundColor}),clone.firstChild);const serialized=new XMLSerializer().serializeToString(clone);const sourceURL=URL.createObjectURL(new Blob([serialized],{type:"image/svg+xml;charset=utf-8"}));const image=new Image();image.onload=()=>{URL.revokeObjectURL(sourceURL);const scale=2;const canvas=document.createElement("canvas");canvas.width=width*scale;canvas.height=height*scale;const context=canvas.getContext("2d");context.scale(scale,scale);context.fillStyle=backgroundColor;context.fillRect(0,0,width,height);context.drawImage(image,0,0,width,height);canvas.toBlob(blob=>{button.disabled=false;if(!blob)return;const current=app.fsms.find(item=>item.id===app.selected);const raw=current?String(current.displayName||current.name||"fsm"):"fsm";const safe=raw.replace(/[^a-zA-Z0-9._-]+/g,"-")||"fsm";const downloadURL=URL.createObjectURL(blob);const link=document.createElement("a");link.href=downloadURL;link.download=safe+"-state-graph.png";document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(downloadURL),1000)},"image/png")};image.onerror=()=>{URL.revokeObjectURL(sourceURL);button.disabled=false;console.error("failed to render FSM graph image")};image.src=sourceURL}catch(error){button.disabled=false;console.error(error)}}
 function cell(row,value,className){const element=document.createElement("td");element.textContent=value;if(className)element.className=className;row.appendChild(element)}
-function renderTraces(traces){const body=byId("traceBody");body.replaceChildren();const ordered=[...traces].reverse();for(const trace of ordered){const row=document.createElement("tr");cell(row,trace.beginTime?new Date(trace.beginTime/1000000).toLocaleTimeString():"-");cell(row,trace.event);cell(row,trace.fromState+" → "+trace.finalState);cell(row,trace.success?"success":"failed",trace.success?"ok":"fail");cell(row,formatNanos(trace.duration));cell(row,trace.error||"-",trace.error?"trace-error":"");body.appendChild(row)}}
-function initializeFloatingPanels(){
-  for(const button of document.querySelectorAll(".panel-toggle")){
-    const panel=byId(button.dataset.panel);
-    const stored=readPreference("fsm-panel:"+panel.id);
-    const collapsed=stored?stored==="collapsed":true;
-    panel.classList.toggle("collapsed",collapsed);
-    button.setAttribute("aria-expanded",String(!collapsed));
-    button.onclick=()=>{
-      const next=!panel.classList.contains("collapsed");
-      panel.classList.toggle("collapsed",next);
-      button.setAttribute("aria-expanded",String(!next));
-      writePreference("fsm-panel:"+panel.id,next?"collapsed":"open");
-    };
+function renderLatestTrace(trace){
+  const latest=byId("traceLatest");
+  latest.replaceChildren();
+  if(!trace){
+    const empty=document.createElement("span");
+    empty.className="trace-latest-empty";
+    empty.textContent="暂无 Trace";
+    latest.appendChild(empty);
+    return;
   }
+  const time=document.createElement("span");
+  time.textContent=trace.beginTime?new Date(trace.beginTime/1000000).toLocaleTimeString():"-";
+  const event=document.createElement("span");
+  event.className="trace-latest-event";
+  event.textContent=trace.event||"-";
+  const flow=document.createElement("span");
+  flow.textContent=(trace.fromState||"-")+" → "+(trace.finalState||"-");
+  const result=document.createElement("span");
+  result.className="trace-latest-result "+(trace.success?"ok":"fail");
+  result.textContent=trace.success?"success":"failed";
+  if(trace.error)result.title=trace.error;
+  const duration=document.createElement("span");
+  duration.textContent=formatNanos(trace.duration);
+  latest.append(time,event,flow,result,duration);
+}
+function renderTraces(traces){
+  const body=byId("traceBody");
+  body.replaceChildren();
+  const ordered=[...traces].reverse();
+  renderLatestTrace(ordered[0]);
+  for(const trace of ordered){
+    const row=document.createElement("tr");
+    cell(row,trace.beginTime?new Date(trace.beginTime/1000000).toLocaleTimeString():"-");
+    cell(row,trace.event);
+    cell(row,trace.fromState+" → "+trace.finalState);
+    cell(row,trace.success?"success":"failed",trace.success?"ok":"fail");
+    cell(row,formatNanos(trace.duration));
+    cell(row,trace.error||"-",trace.error?"trace-error":"");
+    body.appendChild(row);
+  }
+}
+function setMonitorPanelVisible(panelID,visible,persist){
+  const panel=byId(panelID);
+  const button=document.querySelector(".detail-tab[data-panel=\""+panelID+"\"]");
+  panel.hidden=!visible;
+  button.classList.toggle("active",visible);
+  button.setAttribute("aria-expanded",String(visible));
+  if(persist)writePreference("fsm-monitor-panel:"+panelID,visible?"open":"closed");
+}
+function initializeMonitorPanels(){
+  for(const button of document.querySelectorAll(".detail-tab")){
+    const panelID=button.dataset.panel;
+    setMonitorPanelVisible(panelID,readPreference("fsm-monitor-panel:"+panelID)!=="closed",false);
+    button.onclick=()=>setMonitorPanelVisible(panelID,byId(panelID).hidden,true);
+  }
+  for(const button of document.querySelectorAll(".panel-close"))button.onclick=()=>setMonitorPanelVisible(button.dataset.panel,false,true);
+}
+function setTraceExpanded(expanded){
+  const panel=byId("tracePanel");
+  const button=byId("traceToggle");
+  panel.classList.toggle("expanded",expanded);
+  button.setAttribute("aria-expanded",String(expanded));
+  button.setAttribute("aria-label",expanded?"折叠 Trace 状态栏":"展开完整 Trace");
+  button.title=button.getAttribute("aria-label");
+}
+function initializeTracePanel(){
+  setTraceExpanded(false);
+  byId("traceToggle").onclick=()=>setTraceExpanded(!byId("tracePanel").classList.contains("expanded"));
 }
 function applySidebarCollapsed(collapsed,persist){
   document.body.classList.toggle("sidebar-collapsed",collapsed);
@@ -1106,9 +1219,13 @@ initializeResizableColumns();
 initializeSidebarToggle();
 initializeOverlayOpacity();
 initializeDiscovery();
-initializeFloatingPanels();
+initializeMonitorPanels();
+initializeTracePanel();
 byId("fsmSearch").addEventListener("input",event=>{app.query=event.target.value;renderList()});
-byId("exportGraph").disabled=true;
+setGraphToolsDisabled(true);
+byId("zoomOutGraph").onclick=()=>zoomStateGraph(-.15);
+byId("zoomInGraph").onclick=()=>zoomStateGraph(.15);
+byId("resetGraph").onclick=resetStateGraphView;
 byId("exportGraph").onclick=exportStateGraph;
 const stream=new EventSource("/api/events");
 stream.onopen=()=>{document.body.dataset.connection="online"};

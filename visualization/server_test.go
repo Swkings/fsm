@@ -266,10 +266,20 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 		"exportStateGraph",
 		"graph-stage",
 		"setupGraphPan",
+		"pendingGraphRender",
 		"node-tooltip",
 		"showNodeTooltip",
-		"floating-panel",
-		"initializeFloatingPanels",
+		"monitor-panel",
+		"detail-nav",
+		"panel-close",
+		"initializeMonitorPanels",
+		"setMonitorPanelVisible(panelID,byId(panelID).hidden,true)",
+		"Active Event",
+		"canvas-toolbar",
+		"zoomStateGraph",
+		"resetStateGraphView",
+		"traceLatest",
+		"initializeTracePanel",
 		"sidebarToggle",
 		"applySidebarCollapsed",
 		"body.sidebar-collapsed #sidebarResize { visibility: hidden; pointer-events: none; }",
@@ -291,6 +301,11 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 		if !strings.Contains(pageText, marker) {
 			t.Fatalf("web page missing %q", marker)
 		}
+	}
+	navStart := strings.Index(pageText, "<nav class=\"detail-nav\"")
+	navEnd := navStart + strings.Index(pageText[navStart:], "</nav>")
+	if navStart < 0 || navEnd < navStart || strings.Contains(pageText[navStart:navEnd], ">Trace<") {
+		t.Fatal("detail nav must contain Active Event and Payload without Trace")
 	}
 	if strings.Index(pageText, "id=\"discoveryToggle\"") < strings.Index(pageText, "id=\"themeToggle\"") {
 		t.Fatal("settings toggle must be the rightmost header action")
