@@ -16,7 +16,7 @@ go run ./examples/basic
 
 可视化 Server 还支持通过 `RegisterDiscovery` 或 Web Header 中的服务发现配置，自动发现远程客户端、读取 Definition、注册 FSM 并持续 pull RealtimeData。
 
-Web 页面以可拖动状态图作为全屏画布，Payload、Trace 和当前可接收事件使用可折叠透明浮层；同时支持文件夹聚合搜索、节点悬浮信息、侧栏折叠、浮层透明度调节、明暗主题切换和状态图 PNG 导出：
+React Web 页面以可拖动状态图作为全屏画布；Active Event 与 Payload 可由顶部 Nav 独立打开或关闭，Trace 位于底部可展开状态栏。右侧竖向工具栏提供缩放、复位和 PNG 导出，同时支持文件夹聚合搜索、节点悬浮信息、侧栏折叠、透明度调节和明暗主题切换：
 
 ```bash
 go run ./examples/server

@@ -266,12 +266,14 @@ Web 页面实时展示：
 - 当前状态、Payload、Trace、全部状态转移和当前可接收事件。
 - FSM 按注册 `path` 的 `/` 层级形成可聚合折叠的文件夹树。
 - 左侧目录树支持调整宽度、折叠/展开并记忆状态。
-- 状态图作为全屏画布，可拖动、双击复位并导出 PNG。
+- 状态图作为全屏画布，右侧竖向工具栏提供放大、缩小、恢复默认视图和 PNG 导出；画布也支持连续拖动。
 - 状态节点支持鼠标悬浮或键盘聚焦查看转移信息。
-- Payload、Trace 和事件使用可折叠浮层；Header 可调节浮层、Header 和侧栏透明度，默认 85%。
+- Active Event 与 Payload 由顶部 Nav 独立打开或关闭；Trace 固定在底部状态栏并可展开完整记录。Header 可调节浮层和侧栏透明度，默认 85%。
 - 明暗主题切换、pull 采集错误以及动态注册/注销。
 
 HTTP 接口为 `GET/POST /api/fsms`、`GET /api/fsms/{id}`、`POST /api/push/{id}`，实时更新使用 `/api/events` SSE。`Handler()` 可以挂载到已有 HTTP 服务。Server 不提供鉴权，绑定公网地址时应由应用或反向代理增加认证和访问控制。
+
+可视化采用前后端分离结构：React/Vite 源码位于 `visualization/frontend`，Go 包只提供 `/api/*` 与 SSE，并通过 `go:embed` 托管生产构建。开发时分别启动 Go Server 与 `npm run dev`，Vite 默认把 `/api` 代理到 `http://127.0.0.1:5005`；生产构建可执行 `go generate ./visualization` 或在前端目录执行 `npm ci && npm run build`。
 
 可运行示例：
 

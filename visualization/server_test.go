@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -257,58 +258,64 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 	}
 	page, _ := io.ReadAll(response.Body)
 	_ = response.Body.Close()
-	required := []string{
-		"FSM Observatory",
-		"EventSource",
-		"buildFolderTree",
-		"folder-node",
-		"themeToggle",
-		"exportStateGraph",
-		"graph-stage",
-		"setupGraphPan",
-		"pendingGraphRender",
-		"node-tooltip",
-		"showNodeTooltip",
-		"monitor-panel",
-		"detail-nav",
-		"panel-close",
-		"initializeMonitorPanels",
-		"setMonitorPanelVisible(panelID,byId(panelID).hidden,true)",
-		"Active Event",
-		"canvas-toolbar",
-		"zoomStateGraph",
-		"resetStateGraphView",
-		"traceLatest",
-		"initializeTracePanel",
-		"sidebarToggle",
-		"applySidebarCollapsed",
-		"body.sidebar-collapsed #sidebarResize { visibility: hidden; pointer-events: none; }",
-		"opacityToggle",
-		"discoveryToggle",
-		"discoveryForm",
-		"settings-modal",
-		"settings-nav-item",
-		"discovery-form-footer",
-		"打开设置",
-		"/api/discoveries",
-		"applyOverlayTransparency",
-		"--panel-alpha: 15%",
-		"#faf9f5",
-		"#cc785c",
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("frontend index status = %d", response.StatusCode)
+	}
+	if contentType := response.Header.Get("Content-Type"); !strings.HasPrefix(contentType, "text/html") {
+		t.Fatalf("frontend index content type = %q", contentType)
 	}
 	pageText := string(page)
-	for _, marker := range required {
+	for _, marker := range []string{"FSM Observatory", `<div id="root"></div>`, "/assets/"} {
 		if !strings.Contains(pageText, marker) {
-			t.Fatalf("web page missing %q", marker)
+			t.Fatalf("frontend index missing %q", marker)
 		}
 	}
-	navStart := strings.Index(pageText, "<nav class=\"detail-nav\"")
-	navEnd := navStart + strings.Index(pageText[navStart:], "</nav>")
-	if navStart < 0 || navEnd < navStart || strings.Contains(pageText[navStart:navEnd], ">Trace<") {
-		t.Fatal("detail nav must contain Active Event and Payload without Trace")
+
+	assetPattern := regexp.MustCompile(`(?:src|href)="(/assets/[^"]+\.(?:js|css))"`)
+	matches := assetPattern.FindAllStringSubmatch(pageText, -1)
+	if len(matches) != 2 {
+		t.Fatalf("frontend index assets = %v, want JavaScript and CSS", matches)
 	}
-	if strings.Index(pageText, "id=\"discoveryToggle\"") < strings.Index(pageText, "id=\"themeToggle\"") {
-		t.Fatal("settings toggle must be the rightmost header action")
+	var scriptText string
+	for _, match := range matches {
+		assetResponse, assetErr := http.Get(httpServer.URL + match[1])
+		if assetErr != nil {
+			t.Fatal(assetErr)
+		}
+		asset, _ := io.ReadAll(assetResponse.Body)
+		_ = assetResponse.Body.Close()
+		if assetResponse.StatusCode != http.StatusOK || len(asset) == 0 {
+			t.Fatalf("frontend asset %q status=%d size=%d", match[1], assetResponse.StatusCode, len(asset))
+		}
+		if !strings.Contains(assetResponse.Header.Get("Cache-Control"), "immutable") {
+			t.Fatalf("frontend asset %q missing immutable cache policy", match[1])
+		}
+		if strings.HasSuffix(match[1], ".js") {
+			scriptText = string(asset)
+		}
+	}
+	for _, marker := range []string{"/api/events", "/api/discoveries", "Active Event", "FSM 状态转移图", "展开完整 Trace", "恢复默认 FSM 图"} {
+		if !strings.Contains(scriptText, marker) {
+			t.Fatalf("React bundle missing %q", marker)
+		}
+	}
+
+	missingResponse, missingErr := http.Get(httpServer.URL + "/assets/missing.js")
+	if missingErr != nil {
+		t.Fatal(missingErr)
+	}
+	_ = missingResponse.Body.Close()
+	if missingResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing frontend asset status = %d", missingResponse.StatusCode)
+	}
+
+	unknownAPIResponse, unknownAPIErr := http.Get(httpServer.URL + "/api/unknown")
+	if unknownAPIErr != nil {
+		t.Fatal(unknownAPIErr)
+	}
+	_ = unknownAPIResponse.Body.Close()
+	if unknownAPIResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown API status = %d", unknownAPIResponse.StatusCode)
 	}
 
 	runtimeBody := []byte(`{"currentState":"ready","payload":{"source":"http"}}`)

@@ -54,7 +54,7 @@ func (registration *Registration) Unregister() bool {
 	return registration != nil && registration.server != nil && registration.server.Unregister(registration.id)
 }
 
-// Server 提供客户端注册、pull/push 实时数据采集、HTTP API、SSE 和内嵌 Web 页面。
+// Server 提供客户端注册、pull/push 实时数据采集、HTTP API、SSE 和内嵌 React 生产资源。
 type Server struct {
 	address    string
 	traceLimit int

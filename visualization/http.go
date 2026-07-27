@@ -13,7 +13,7 @@ import (
 
 func newHTTPHandler(server *Server) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", server.handleIndex)
+	mux.Handle("/", newFrontendHandler())
 	mux.HandleFunc("/api/fsms", server.handleFSMList)
 	mux.HandleFunc("/api/fsms/", server.handleFSMDetail)
 	mux.HandleFunc("/api/events", server.handleEvents)
@@ -108,15 +108,6 @@ func (server *Server) broadcast(eventType string, id string) {
 		default:
 		}
 	}
-}
-
-func (server *Server) handleIndex(writer http.ResponseWriter, request *http.Request) {
-	if request.URL.Path != "/" {
-		http.NotFound(writer, request)
-		return
-	}
-	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = writer.Write([]byte(webPage))
 }
 
 func (server *Server) handleFSMList(writer http.ResponseWriter, request *http.Request) {
