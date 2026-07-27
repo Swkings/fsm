@@ -272,6 +272,7 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 		"initializeFloatingPanels",
 		"sidebarToggle",
 		"applySidebarCollapsed",
+		"body.sidebar-collapsed #sidebarResize { visibility: hidden; pointer-events: none; }",
 		"opacityToggle",
 		"discoveryToggle",
 		"discoveryForm",

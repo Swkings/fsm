@@ -104,8 +104,8 @@ body.sidebar-collapsed .aside-title,
 body.sidebar-collapsed .count-pill,
 body.sidebar-collapsed .tree-toolbar,
 body.sidebar-collapsed .fsm-list,
-body.sidebar-collapsed #sidebarResize,
 body.sidebar-collapsed .sidebar-collapse-icon { display: none; }
+body.sidebar-collapsed #sidebarResize { visibility: hidden; pointer-events: none; }
 body.sidebar-collapsed .sidebar-expand-icon { display: block; }
 .tree-toolbar { padding: 0 6px 12px; }
 .tree-search {
