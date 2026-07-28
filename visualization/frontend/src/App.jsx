@@ -88,13 +88,33 @@ function PanelClose({ label, onClick }) {
 }
 function ActiveEventPanel({ item, open, onClose }) {
   if (!open) return null
-  const available = item.availableTransitions || (item.transitions || []).filter((edge) => edge.fromState === item.currentState)
+  const available = [...(item.availableTransitions || (item.transitions || []).filter((edge) => edge.fromState === item.currentState))]
+    .sort((left, right) => String(left.event).localeCompare(String(right.event)) || String(left.toState).localeCompare(String(right.toState)))
+  const currentState = String(item.currentState || 'empty')
   return (
     <section className="monitor-panel available-panel" aria-labelledby="activeEventTitle">
       <div className="monitor-panel-head"><strong id="activeEventTitle">Active Event</strong><span className="panel-summary">{available.length} events</span><PanelClose label="Active Event" onClick={onClose} /></div>
-      <div className="panel-body"><div className="available-list">
+      <div className="panel-body"><div className="active-event-tree" role="tree" aria-label={`${currentState} 可接收事件`}>
+        <div className="active-tree-root" role="treeitem" aria-expanded={available.length > 0}>
+          <span className="active-tree-root-dot" aria-hidden="true" />
+          <strong>{currentState}</strong>
+          <span className="active-tree-current">CURRENT</span>
+        </div>
         {!available.length && <div className="available-empty">当前状态没有可接收的事件</div>}
-        {available.map((edge, index) => <div key={`${edge.event}-${edge.toState}-${index}`} className={`available-transition${String(edge.event) === String(item.processingEvent || '') ? ' processing' : ''}`}><span className="event-token">{edge.event}</span><span style={{ color: 'var(--muted)' }}>→</span><span className="target-state">{edge.toState}</span></div>)}
+        {!!available.length && <div className="active-tree-branches" role="group">
+          {available.map((edge, index) => {
+            const processing = String(edge.event) === String(item.processingEvent || '')
+            return (
+              <div key={`${edge.event}-${edge.toState}-${index}`} className={`active-tree-branch${processing ? ' processing' : ''}`} role="treeitem">
+                <span className="active-tree-prefix" aria-hidden="true">{index === available.length - 1 ? '└──' : '├──'}</span>
+                <span className="event-token">{edge.event}</span>
+                <span className="active-tree-arrow" aria-hidden="true">→</span>
+                <span className="target-state">{edge.toState}</span>
+                {processing && <span className="active-tree-processing">PROCESSING</span>}
+              </div>
+            )
+          })}
+        </div>}
       </div></div>
     </section>
   )
@@ -118,6 +138,20 @@ function PayloadPanel({ item, open, onClose }) {
     </section>
   )
 }
+function TraceMetadata({ trace }) {
+  const entry = trace.entryMetadata
+  const exit = trace.exitMetadata
+  return (
+    <details className="trace-metadata">
+      <summary>进入 / 退出</summary>
+      <div className="trace-metadata-grid">
+        <section><strong>进入 FSM</strong><pre>{JSON.stringify(entry === undefined ? null : entry, null, 2)}</pre></section>
+        <section><strong>退出 FSM</strong><pre>{JSON.stringify(exit === undefined ? null : exit, null, 2)}</pre></section>
+      </div>
+    </details>
+  )
+}
+
 function TracePanel({ traces }) {
   const [expanded, setExpanded] = useState(false)
   const ordered = useMemo(() => [...(traces || [])].reverse(), [traces])
@@ -133,7 +167,7 @@ function TracePanel({ traces }) {
           <svg className="trace-expand-icon" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6" /></svg><svg className="trace-collapse-icon" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg>
         </button>
       </div>
-      <div className="trace-history"><table><thead><tr><th>时间</th><th>事件</th><th>状态流转</th><th>结果</th><th>耗时</th><th>错误</th></tr></thead><tbody>{ordered.map((trace, index) => <tr key={trace.transitionId || index}><td>{trace.beginTime ? new Date(trace.beginTime / 1000000).toLocaleTimeString() : '-'}</td><td>{trace.event}</td><td>{trace.fromState} → {trace.finalState}</td><td className={trace.success ? 'ok' : 'fail'}>{trace.success ? 'success' : 'failed'}</td><td>{formatNanos(trace.duration)}</td><td className={trace.error ? 'trace-error' : ''}>{trace.error || '-'}</td></tr>)}</tbody></table></div>
+      <div className="trace-history"><table><thead><tr><th>时间</th><th>事件</th><th>状态流转</th><th>结果</th><th>耗时</th><th>FSM 数据</th><th>错误</th></tr></thead><tbody>{ordered.map((trace, index) => <tr key={trace.transitionId || index}><td>{trace.beginTime ? new Date(trace.beginTime / 1000000).toLocaleTimeString() : "-"}</td><td>{trace.event}</td><td>{trace.fromState} → {trace.finalState}</td><td className={trace.success ? "ok" : "fail"}>{trace.success ? "success" : "failed"}</td><td>{formatNanos(trace.duration)}</td><td><TraceMetadata trace={trace} /></td><td className={trace.error ? "trace-error" : ""}>{trace.error || "-"}</td></tr>)}</tbody></table></div>
     </section>
   )
 }

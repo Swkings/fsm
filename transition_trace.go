@@ -25,6 +25,10 @@ type TransitionTrace struct {
 	FinalState FSMState
 	// Error 保存转移失败的原因；成功时为 nil。
 	Error error
+	// EntryMetadata 是事件进入 FSM、任何 Handler 执行前的完整运行数据快照。
+	EntryMetadata FSMMetadata
+	// ExitMetadata 是事件完成或失败、最终退出 FSM 时的完整运行数据快照。
+	ExitMetadata FSMMetadata
 	// BeginTime 是转移开始时的 Unix 纳秒时间戳。
 	BeginTime int64
 	// EndTime 是转移结束时的 Unix 纳秒时间戳。
@@ -92,6 +96,18 @@ func (tt *TransitionTrace) SetFinalState(finalState FSMState) *TransitionTrace {
 	return tt
 }
 
+// SetEntryMetadata 记录事件进入 FSM 时的完整运行数据快照。
+func (tt *TransitionTrace) SetEntryMetadata(metadata FSMMetadata) *TransitionTrace {
+	tt.EntryMetadata = metadata.clone()
+	return tt
+}
+
+// SetExitMetadata 记录事件最终退出 FSM 时的完整运行数据快照。
+func (tt *TransitionTrace) SetExitMetadata(metadata FSMMetadata) *TransitionTrace {
+	tt.ExitMetadata = metadata.clone()
+	return tt
+}
+
 // TransitionSuccess 将本次转移标记为成功，并返回自身。
 func (tt *TransitionTrace) TransitionSuccess() *TransitionTrace {
 	tt.TransitionResult = true
@@ -108,7 +124,10 @@ func (tt *TransitionTrace) TransitionFail() *TransitionTrace {
 
 // TrimPtr 返回追踪对象的值副本，避免将内部构建用指针暴露给调用方。
 func (tt *TransitionTrace) TrimPtr() TransitionTrace {
-	return *tt
+	clone := *tt
+	clone.EntryMetadata = tt.EntryMetadata.clone()
+	clone.ExitMetadata = tt.ExitMetadata.clone()
+	return clone
 }
 
 // String 将转移追踪格式化为便于日志记录和排查问题的字符串。
@@ -118,16 +137,18 @@ func (tt *TransitionTrace) String() string {
 		errorMessage = tt.Error.Error()
 	}
 	view := struct {
-		TtId             string   `json:"TtId"`
-		PrevTtId         string   `json:"PrevTtId"`
-		FromState        FSMState `json:"FromState"`
-		Event            FSMEvent `json:"Event"`
-		ToState          FSMState `json:"ToState"`
-		TransitionResult bool     `json:"TransitionResult"`
-		FinalState       FSMState `json:"FinalState"`
-		Error            string   `json:"Error,omitempty"`
-		BeginTime        int64    `json:"BeginTime"`
-		EndTime          int64    `json:"EndTime"`
+		TtId             string      `json:"TtId"`
+		PrevTtId         string      `json:"PrevTtId"`
+		FromState        FSMState    `json:"FromState"`
+		Event            FSMEvent    `json:"Event"`
+		ToState          FSMState    `json:"ToState"`
+		TransitionResult bool        `json:"TransitionResult"`
+		FinalState       FSMState    `json:"FinalState"`
+		Error            string      `json:"Error,omitempty"`
+		EntryMetadata    FSMMetadata `json:"EntryMetadata"`
+		ExitMetadata     FSMMetadata `json:"ExitMetadata"`
+		BeginTime        int64       `json:"BeginTime"`
+		EndTime          int64       `json:"EndTime"`
 	}{
 		TtId:             tt.TtId,
 		PrevTtId:         tt.PrevTtId,
@@ -137,6 +158,8 @@ func (tt *TransitionTrace) String() string {
 		TransitionResult: tt.TransitionResult,
 		FinalState:       tt.FinalState,
 		Error:            errorMessage,
+		EntryMetadata:    tt.EntryMetadata.clone(),
+		ExitMetadata:     tt.ExitMetadata.clone(),
 		BeginTime:        tt.BeginTime,
 		EndTime:          tt.EndTime,
 	}

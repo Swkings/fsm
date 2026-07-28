@@ -36,14 +36,20 @@ function graphGeometry(item) {
     groups.get(key).events.push(String(edge.event))
   })
   const latest = item.traces?.length ? item.traces[item.traces.length - 1] : null
+  const currentState = String(item.currentState || '')
+  const previousState = String(item.previousState || '')
+  const previousEvent = String(item.previousEvent || '')
   const edges = [...groups.values()].flatMap((group) => {
     const from = positions.get(group.from)
     const to = positions.get(group.to)
     if (!from || !to) return []
-    const processing = group.from === String(item.currentState) && group.events.includes(String(item.processingEvent || ''))
-    const recent = latest && group.from === String(latest.fromState) && group.to === String(latest.toState) && group.events.includes(String(latest.event))
-    const available = group.from === String(item.currentState)
-    const status = processing ? 'processing' : recent ? (latest.success ? 'recent' : 'failed') : available ? 'available' : ''
+    const processing = group.from === currentState && group.events.includes(String(item.processingEvent || ''))
+    const runtimeRecent = previousState && previousEvent && group.from === previousState && group.to === currentState && group.events.includes(previousEvent)
+    const traced = latest && group.from === String(latest.fromState) && group.to === String(latest.toState) && group.events.includes(String(latest.event))
+    const failed = traced && !latest.success
+    const recent = runtimeRecent || (traced && latest.success)
+    const available = group.from === currentState
+    const status = processing ? 'processing' : failed ? 'failed' : recent ? 'recent' : available ? 'available' : ''
     let d
     let labelX
     let labelY
@@ -79,7 +85,7 @@ function ArrowMarkers() {
     <defs>
       {[
         ['arrow-default', 'var(--graph-line)'],
-        ['arrow-available', 'var(--primary)'],
+        ['arrow-available', 'var(--graph-next)'],
         ['arrow-recent', 'var(--success)'],
         ['arrow-processing', 'var(--warning)'],
         ['arrow-failed', 'var(--danger)'],
@@ -163,13 +169,14 @@ export default function StateGraph({ item }) {
     const outgoing = geometry.transitions.filter((edge) => String(edge.fromState) === state)
     const incoming = geometry.transitions.filter((edge) => String(edge.toState) === state)
     setTooltip({
-      left: clamp(event.clientX - bounds.left + 14, 8, Math.max(8, bounds.width - 288)),
-      top: clamp(event.clientY - bounds.top + 14, 8, Math.max(8, bounds.height - 138)),
+      left: clamp(event.clientX - bounds.left + 14, 8, Math.max(8, bounds.width - 368)),
+      top: clamp(event.clientY - bounds.top + 14, 8, Math.max(8, bounds.height - Math.min(360, 150 + outgoing.length * 28))),
       state,
       status: state === String(item.currentState) ? '当前状态' : state === String(item.previousState) ? '上一状态' : '普通状态',
       incoming: incoming.length,
       outgoing: outgoing.length,
-      accepted: outgoing.length ? outgoing.map((edge) => `${edge.event} → ${edge.toState}`).join('，') : '无',
+      accepted: outgoing.map((edge) => ({ event: String(edge.event), toState: String(edge.toState) }))
+        .sort((left, right) => left.event.localeCompare(right.event) || left.toState.localeCompare(right.toState)),
     })
   }
   const pointerDown = (event) => {
@@ -251,7 +258,27 @@ export default function StateGraph({ item }) {
         )}
       </div>
       <div id="nodeTooltip" className={`node-tooltip${tooltip ? ' visible' : ''}`} style={tooltip ? { left: tooltip.left, top: tooltip.top } : undefined} role="tooltip">
-        {tooltip && <><strong>{tooltip.state || '(empty)'}</strong><div className="node-tooltip-row"><span>状态</span><span>{tooltip.status}</span></div><div className="node-tooltip-row"><span>进入转移</span><span>{tooltip.incoming}</span></div><div className="node-tooltip-row"><span>离开转移</span><span>{tooltip.outgoing}</span></div><div className="node-tooltip-row"><span>可接收事件</span><span>{tooltip.accepted}</span></div></>}
+        {tooltip && <>
+          <div className="node-tooltip-header"><strong>{tooltip.state || "(empty)"}</strong><span>{tooltip.status}</span></div>
+          <div className="node-tooltip-row"><span>进入转移</span><span>{tooltip.incoming}</span></div>
+          <div className="node-tooltip-row"><span>离开转移</span><span>{tooltip.outgoing}</span></div>
+          <div className="node-tooltip-section-head"><span>Active Event</span><span>{tooltip.accepted.length} events</span></div>
+          <div className="active-event-tree node-active-event-tree" role="tree" aria-label={[tooltip.state, "可接收事件"].join(" ")}>
+            <div className="active-tree-root" role="treeitem" aria-expanded={tooltip.accepted.length > 0}>
+              <span className="active-tree-root-dot" aria-hidden="true" />
+              <strong>{tooltip.state || "(empty)"}</strong>
+            </div>
+            {!tooltip.accepted.length && <div className="available-empty">当前状态没有可接收的事件</div>}
+            {!!tooltip.accepted.length && <div className="active-tree-branches" role="group">
+              {tooltip.accepted.map((edge, index) => <div key={[edge.event, edge.toState, index].join("-")} className="active-tree-branch" role="treeitem">
+                <span className="active-tree-prefix" aria-hidden="true">{index === tooltip.accepted.length - 1 ? "└──" : "├──"}</span>
+                <span className="event-token">{edge.event}</span>
+                <span className="active-tree-arrow" aria-hidden="true">→</span>
+                <span className="target-state">{edge.toState}</span>
+              </div>)}
+            </div>}
+          </div>
+        </>}
       </div>
       <div className="canvas-toolbar" role="toolbar" aria-label="状态图画布工具">
         <button className="icon-button" type="button" aria-label="缩小状态图" title="缩小" disabled={!geometry.states.length} onClick={() => zoom(-0.15)}><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M16 16l5 5"/></svg></button>

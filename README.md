@@ -74,6 +74,15 @@ machine.SetTransitions(
 _, err := machine.ProcessEvent(EventAttack, AttackParams{Damage: 25})
 ```
 
+`Metadata()` 返回当前 FSM 的独立运行数据快照，包括实例 ID、转移 ID、名称、上一状态/事件、当前状态、处理中事件以及序列化后的 Payload：
+
+```go
+metadata := machine.Metadata()
+fmt.Println(metadata.CurrentState, metadata.PreviousEvent)
+```
+
+每条 `TransitionTrace` 通过 `EntryMetadata` 和 `ExitMetadata` 分别保存事件进入 FSM 后、Handler 执行前的数据，以及事件处理完全结束后的最终数据。两份 Metadata 及其中的 Payload JSON 都是深拷贝，不会被后续状态或业务数据修改污染。
+
 同一 FSM 不允许重入处理事件：Handler 内再次调用 `ProcessEvent`，或其他 goroutine 在事件尚未结束时调用，会立即得到 `ErrorEventProcessing`，不会阻塞死锁。Handler 执行期间若通过 `SetCurrentState` 改变状态，原转移会返回 `ErrorStateChanged`，避免覆盖外部状态修改。
 
 ## 异步事件队列
@@ -255,7 +264,7 @@ Web Header 最右侧的设置图标可进入设置页，并在“服务发现”
 
 Web 页面实时展示：
 
-- 当前状态、Payload、Trace、全部状态转移和当前可接收事件。
+- 当前状态、Payload、Trace、全部状态转移和当前可接收事件；每条 Trace 可查看进入与退出 FSM 时的完整 Metadata。
 - FSM 按注册 `path` 的 `/` 层级形成可聚合折叠的文件夹树。
 - 左侧目录树支持调整宽度、折叠/展开并记忆状态。
 - 状态图作为全屏画布，右侧竖向工具栏提供放大、缩小、恢复默认视图和 PNG 导出；画布也支持连续拖动。

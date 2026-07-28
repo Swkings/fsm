@@ -103,19 +103,35 @@ func (definition Definition) Descriptor(config RegistrationConfig) Descriptor {
 	}
 }
 
+// MetadataSnapshot 是可视化协议中的 FSM 运行数据快照。
+type MetadataSnapshot struct {
+	InstanceID      string          `json:"instanceId"`
+	TransitionID    string          `json:"transitionId"`
+	Name            string          `json:"name"`
+	Description     string          `json:"description,omitempty"`
+	PreviousState   string          `json:"previousState"`
+	PreviousEvent   string          `json:"previousEvent"`
+	CurrentState    string          `json:"currentState"`
+	ProcessingEvent string          `json:"processingEvent,omitempty"`
+	Payload         json.RawMessage `json:"payload"`
+	PayloadError    string          `json:"payloadError,omitempty"`
+}
+
 // TraceSnapshot 是一次状态转移执行结果的通用快照。
 type TraceSnapshot struct {
-	TransitionID string        `json:"transitionId"`
-	PreviousID   string        `json:"previousId"`
-	FromState    string        `json:"fromState"`
-	Event        string        `json:"event"`
-	ToState      string        `json:"toState"`
-	FinalState   string        `json:"finalState"`
-	Success      bool          `json:"success"`
-	Error        string        `json:"error,omitempty"`
-	BeginTime    int64         `json:"beginTime"`
-	EndTime      int64         `json:"endTime"`
-	Duration     time.Duration `json:"duration"`
+	TransitionID  string           `json:"transitionId"`
+	PreviousID    string           `json:"previousId"`
+	FromState     string           `json:"fromState"`
+	Event         string           `json:"event"`
+	ToState       string           `json:"toState"`
+	FinalState    string           `json:"finalState"`
+	Success       bool             `json:"success"`
+	Error         string           `json:"error,omitempty"`
+	EntryMetadata MetadataSnapshot `json:"entryMetadata"`
+	ExitMetadata  MetadataSnapshot `json:"exitMetadata"`
+	BeginTime     int64            `json:"beginTime"`
+	EndTime       int64            `json:"endTime"`
+	Duration      time.Duration    `json:"duration"`
 }
 
 // RealtimeData 是注册完成后 pull/push 同步的易变数据。
@@ -286,9 +302,18 @@ func cloneDefinition(definition Definition) Definition {
 	return definition
 }
 
+func cloneTraceSnapshots(traces []TraceSnapshot) []TraceSnapshot {
+	cloned := append([]TraceSnapshot(nil), traces...)
+	for index := range cloned {
+		cloned[index].EntryMetadata.Payload = append(json.RawMessage(nil), cloned[index].EntryMetadata.Payload...)
+		cloned[index].ExitMetadata.Payload = append(json.RawMessage(nil), cloned[index].ExitMetadata.Payload...)
+	}
+	return cloned
+}
+
 func cloneRealtimeData(data RealtimeData) RealtimeData {
 	data.Payload = append(json.RawMessage(nil), data.Payload...)
-	data.Traces = append([]TraceSnapshot(nil), data.Traces...)
+	data.Traces = cloneTraceSnapshots(data.Traces)
 	return data
 }
 
@@ -298,6 +323,6 @@ func cloneSnapshot(snapshot Snapshot) Snapshot {
 	snapshot.Events = append([]string(nil), snapshot.Events...)
 	snapshot.Transitions = append([]TransitionSnapshot(nil), snapshot.Transitions...)
 	snapshot.AvailableTransitions = append([]TransitionSnapshot(nil), snapshot.AvailableTransitions...)
-	snapshot.Traces = append([]TraceSnapshot(nil), snapshot.Traces...)
+	snapshot.Traces = cloneTraceSnapshots(snapshot.Traces)
 	return snapshot
 }

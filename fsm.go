@@ -2,6 +2,7 @@ package fsm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -38,6 +39,26 @@ type EventStateKey struct {
 	Event FSMEvent
 	// FromState 是处理该事件时要求状态机所处的状态。
 	FromState FSMState
+}
+
+// FSMMetadata 是 FSM 某一时刻的完整运行数据快照。
+// Payload 使用 JSON 深拷贝，调用方修改返回值不会影响状态机内部数据。
+type FSMMetadata struct {
+	InstanceID      string          `json:"instanceId"`
+	TransitionID    string          `json:"transitionId"`
+	Name            FSMName         `json:"name"`
+	Description     string          `json:"description,omitempty"`
+	PreviousState   FSMState        `json:"previousState"`
+	PreviousEvent   FSMEvent        `json:"previousEvent"`
+	CurrentState    FSMState        `json:"currentState"`
+	ProcessingEvent FSMEvent        `json:"processingEvent,omitempty"`
+	Payload         json.RawMessage `json:"payload"`
+	PayloadError    string          `json:"payloadError,omitempty"`
+}
+
+func (metadata FSMMetadata) clone() FSMMetadata {
+	metadata.Payload = append(json.RawMessage(nil), metadata.Payload...)
+	return metadata
 }
 
 // String 返回事件与源状态拼接后的可读标识，主要用于错误信息和生成代码中的名称。
@@ -129,7 +150,7 @@ type (
 	// 转移规则通过 SetTransitions 注册，运行阶段通过 ProcessEvent 串行处理事件。
 	FSM[T PayloadT] struct {
 		// instanceID 是状态机实例的稳定标识，不随转移追踪标识变化。
-		instanceID string
+		InstanceID string
 		// TtId 是最近一次成功转移的追踪标识；创建实例时会生成初始标识。
 		TtId string
 		// Name 是状态机名称。
@@ -177,7 +198,7 @@ type (
 // payloads 是可选参数；传入多个值时只使用第一个，未传入时 Payload 为 nil。
 func NewFSM[T PayloadT](fsmName FSMName, initState FSMState, payloads ...*T) *FSM[T] {
 	fsm := &FSM[T]{
-		instanceID:        uuid.NewString(),
+		InstanceID:        uuid.NewString(),
 		TtId:              uuid.NewString(),
 		Name:              fsmName,
 		fromState:         StateEmpty,
@@ -285,6 +306,47 @@ func (fsm *FSM[T]) GetCurrentState() FSMState {
 	return fsm.currentState
 }
 
+// Metadata 返回 FSM 当前运行数据的独立快照。
+// 快照包含实例与转移标识、状态、事件以及序列化后的业务 Payload。
+func (fsm *FSM[T]) Metadata() FSMMetadata {
+	if fsm == nil {
+		return FSMMetadata{Payload: json.RawMessage("null")}
+	}
+
+	fsm.stateLock.RLock()
+	metadata := FSMMetadata{
+		InstanceID:      fsm.InstanceID,
+		TransitionID:    fsm.TtId,
+		Name:            fsm.Name,
+		Description:     fsm.Describe,
+		PreviousState:   fsm.fromState,
+		PreviousEvent:   fsm.fromEvent,
+		CurrentState:    fsm.currentState,
+		ProcessingEvent: fsm.processingEvent,
+		Payload:         json.RawMessage("null"),
+	}
+	payload := fsm.Payload
+	fsm.stateLock.RUnlock()
+
+	if payload == nil {
+		return metadata
+	}
+	payloadJSON, err := (*payload).JSON()
+	if err != nil {
+		metadata.PayloadError = err.Error()
+		return metadata
+	}
+	if len(payloadJSON) == 0 {
+		return metadata
+	}
+	if !json.Valid(payloadJSON) {
+		metadata.PayloadError = "payload JSON is invalid"
+		return metadata
+	}
+	metadata.Payload = append(json.RawMessage(nil), payloadJSON...)
+	return metadata
+}
+
 // GetEventContext 返回当前事件的 context，供 Handler 监听提交方取消信号。
 // fire-and-forget 事件或没有事件正在处理时返回 context.Background；排队过期时间不会进入该 context。
 func (fsm *FSM[T]) GetEventContext() context.Context {
@@ -364,7 +426,7 @@ func (fsm *FSM[T]) processEventLocked(ctx context.Context, event FSMEvent, param
 }
 
 // processEventLockedCore 执行实际转移；调用方通过 processEventLocked 统一发布运行时通知。
-func (fsm *FSM[T]) processEventLockedCore(ctx context.Context, event FSMEvent, params ...any) (TransitionTrace, error) {
+func (fsm *FSM[T]) processEventLockedCore(ctx context.Context, event FSMEvent, params ...any) (result TransitionTrace, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return fsm.rejectedEventTrace(event, err), err
 	}
@@ -372,37 +434,48 @@ func (fsm *FSM[T]) processEventLockedCore(ctx context.Context, event FSMEvent, p
 	fromState, prevTtID := fsm.beginProcessingEvent(ctx, event)
 	// 在 Handler 执行前发布 processingEvent，使可视化页面能够动态高亮正在执行的转移。
 	fsm.notifyRuntimeObservers(nil)
-	defer fsm.clearProcessingEvent()
 
 	nextTtID := uuid.NewString()
 	trace := NewTransitionTrace(prevTtID, nextTtID, fromState, event).Start()
-	eventStateKey := EventStateKey{Event: event, FromState: fromState}
+	trace.SetEntryMetadata(fsm.Metadata())
+	defer func() {
+		fsm.clearProcessingEvent()
+		trace.SetExitMetadata(fsm.Metadata())
+		if resultErr != nil {
+			trace.End(resultErr)
+		} else {
+			trace.End()
+		}
+		result = trace.TrimPtr()
+	}()
 
+	eventStateKey := EventStateKey{Event: event, FromState: fromState}
 	toState, handler, exists := fsm.getTransition(eventStateKey)
 	if !exists {
-		err := ErrorEventStateKeyInvalid(eventStateKey)
-		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail().End(err)
-		return trace.TrimPtr(), err
+		resultErr = ErrorEventStateKeyInvalid(eventStateKey)
+		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail()
+		return
 	}
 	trace.SetToState(toState)
 
-	if err := handler.apply(ctx, fsm, params...); err != nil {
-		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail().End(err)
-		return trace.TrimPtr(), err
+	if resultErr = handler.apply(ctx, fsm, params...); resultErr != nil {
+		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail()
+		return
 	}
-	if err := ctx.Err(); err != nil {
-		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail().End(err)
-		return trace.TrimPtr(), err
-	}
-
-	finalState, err := fsm.commitTransition(fromState, event, toState, nextTtID)
-	if err != nil {
-		trace.SetFinalState(finalState).TransitionFail().End(err)
-		return trace.TrimPtr(), err
+	if resultErr = ctx.Err(); resultErr != nil {
+		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail()
+		return
 	}
 
-	trace.SetFinalState(finalState).TransitionSuccess().End()
-	return trace.TrimPtr(), nil
+	var finalState FSMState
+	finalState, resultErr = fsm.commitTransition(fromState, event, toState, nextTtID)
+	if resultErr != nil {
+		trace.SetFinalState(finalState).TransitionFail()
+		return
+	}
+
+	trace.SetFinalState(finalState).TransitionSuccess()
+	return
 }
 
 // releaseEventExecution 释放执行权并唤醒等待调度的异步队列。

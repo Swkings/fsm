@@ -3,6 +3,7 @@ package fsm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -18,7 +19,7 @@ func (fsm *FSM[T]) VisualizationDefinition() visualization.Definition {
 		return visualization.Definition{}
 	}
 	fsm.stateLock.RLock()
-	id := fsm.instanceID
+	id := fsm.InstanceID
 	name := string(fsm.Name)
 	description := fsm.Describe
 	currentState := string(fsm.currentState)
@@ -117,32 +118,35 @@ func (fsm *FSM[T]) SubscribeVisualization(publish visualization.PublishFunc) fun
 }
 
 func (fsm *FSM[T]) runtimeVisualizationData() visualization.RealtimeData {
-	fsm.stateLock.RLock()
-	transitionID := fsm.TtId
-	currentState := fsm.currentState.String()
-	previousState := fsm.fromState.String()
-	previousEvent := fsm.fromEvent.String()
-	processingEvent := fsm.processingEvent.String()
-	payload := fsm.Payload
-	fsm.stateLock.RUnlock()
-
-	var payloadJSON []byte
+	metadata := fsm.Metadata()
 	var payloadError error
-	if payload == nil {
-		payloadJSON, payloadError = json.Marshal(nil)
-	} else {
-		payloadJSON, payloadError = (*payload).JSON()
+	if metadata.PayloadError != "" {
+		payloadError = errors.New(metadata.PayloadError)
 	}
-
 	return visualization.RealtimeData{
-		TransitionID:    transitionID,
-		CurrentState:    currentState,
-		PreviousState:   previousState,
-		PreviousEvent:   previousEvent,
-		ProcessingEvent: processingEvent,
-		Payload:         payloadJSON,
+		TransitionID:    metadata.TransitionID,
+		CurrentState:    string(metadata.CurrentState),
+		PreviousState:   string(metadata.PreviousState),
+		PreviousEvent:   string(metadata.PreviousEvent),
+		ProcessingEvent: string(metadata.ProcessingEvent),
+		Payload:         append(json.RawMessage(nil), metadata.Payload...),
 		PayloadError:    payloadError,
 		UpdatedAt:       time.Now(),
+	}
+}
+
+func newVisualizationMetadataSnapshot(metadata FSMMetadata) visualization.MetadataSnapshot {
+	return visualization.MetadataSnapshot{
+		InstanceID:      metadata.InstanceID,
+		TransitionID:    metadata.TransitionID,
+		Name:            string(metadata.Name),
+		Description:     metadata.Description,
+		PreviousState:   string(metadata.PreviousState),
+		PreviousEvent:   string(metadata.PreviousEvent),
+		CurrentState:    string(metadata.CurrentState),
+		ProcessingEvent: string(metadata.ProcessingEvent),
+		Payload:         append(json.RawMessage(nil), metadata.Payload...),
+		PayloadError:    metadata.PayloadError,
 	}
 }
 
@@ -152,17 +156,19 @@ func newVisualizationTraceSnapshot(trace TransitionTrace) visualization.TraceSna
 		errorMessage = trace.Error.Error()
 	}
 	return visualization.TraceSnapshot{
-		TransitionID: trace.TtId,
-		PreviousID:   trace.PrevTtId,
-		FromState:    string(trace.FromState),
-		Event:        string(trace.Event),
-		ToState:      string(trace.ToState),
-		FinalState:   string(trace.FinalState),
-		Success:      trace.TransitionResult,
-		Error:        errorMessage,
-		BeginTime:    trace.BeginTime,
-		EndTime:      trace.EndTime,
-		Duration:     trace.Duration(),
+		TransitionID:  trace.TtId,
+		PreviousID:    trace.PrevTtId,
+		FromState:     string(trace.FromState),
+		Event:         string(trace.Event),
+		ToState:       string(trace.ToState),
+		FinalState:    string(trace.FinalState),
+		Success:       trace.TransitionResult,
+		Error:         errorMessage,
+		EntryMetadata: newVisualizationMetadataSnapshot(trace.EntryMetadata),
+		ExitMetadata:  newVisualizationMetadataSnapshot(trace.ExitMetadata),
+		BeginTime:     trace.BeginTime,
+		EndTime:       trace.EndTime,
+		Duration:      trace.Duration(),
 	}
 }
 

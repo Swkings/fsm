@@ -335,6 +335,7 @@ func (server *Server) storeRealtimeDataLocked(
 	incrementalTraces []TraceSnapshot,
 ) bool {
 	data = cloneRealtimeData(data)
+	incrementalTraces = cloneTraceSnapshots(incrementalTraces)
 	server.mu.Lock()
 	registered, exists := server.sources[id]
 	if !exists || registered != expected {
@@ -342,7 +343,7 @@ func (server *Server) storeRealtimeDataLocked(
 		return false
 	}
 	if data.Traces != nil {
-		registered.traces = append([]TraceSnapshot(nil), data.Traces...)
+		registered.traces = cloneTraceSnapshots(data.Traces)
 	}
 	if len(incrementalTraces) > 0 {
 		registered.traces = append(registered.traces, incrementalTraces...)
@@ -394,7 +395,7 @@ func buildSnapshot(
 		Events:               append([]string(nil), definition.Events...),
 		Transitions:          append([]TransitionSnapshot(nil), definition.Transitions...),
 		AvailableTransitions: available,
-		Traces:               append([]TraceSnapshot(nil), traces...),
+		Traces:               cloneTraceSnapshots(traces),
 		UpdatedAt:            data.UpdatedAt,
 	}
 }

@@ -63,12 +63,26 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 	if snapshot.Path != "production/doors" || snapshot.CurrentState != "opened" {
 		t.Fatalf("snapshot = path %q, state %q", snapshot.Path, snapshot.CurrentState)
 	}
-	if snapshot.ID != machine.instanceID || snapshot.Name != string(machine.Name) ||
+	if snapshot.ID != machine.InstanceID || snapshot.Name != string(machine.Name) ||
 		snapshot.Description != machine.Describe || snapshot.DisplayName != "Warehouse Door" {
 		t.Fatalf("snapshot identity = %+v", snapshot.Descriptor)
 	}
 	if len(snapshot.Traces) != 1 || snapshot.Traces[0].Event != "open" {
 		t.Fatalf("unexpected traces: %+v", snapshot.Traces)
+	}
+	entryMetadata, exitMetadata := snapshot.Traces[0].EntryMetadata, snapshot.Traces[0].ExitMetadata
+	if entryMetadata.CurrentState != "closed" || exitMetadata.CurrentState != "opened" {
+		t.Fatalf("trace metadata states = entry %q, exit %q", entryMetadata.CurrentState, exitMetadata.CurrentState)
+	}
+	var entryPayload, exitPayload visualizationTestPayload
+	if err := json.Unmarshal(entryMetadata.Payload, &entryPayload); err != nil {
+		t.Fatalf("unmarshal trace entry metadata payload: %v", err)
+	}
+	if err := json.Unmarshal(exitMetadata.Payload, &exitPayload); err != nil {
+		t.Fatalf("unmarshal trace exit metadata payload: %v", err)
+	}
+	if entryPayload.Count != 0 || exitPayload.Count != 1 {
+		t.Fatalf("trace metadata payloads = entry %d, exit %d", entryPayload.Count, exitPayload.Count)
 	}
 
 	if !registration.Unregister() {

@@ -53,6 +53,95 @@ func TestProcessEventRunsHandlerStagesInOrder(t *testing.T) {
 	}
 }
 
+func TestMetadataReturnsCurrentFSMSnapshot(t *testing.T) {
+	payload := &testPayload{Value: 3}
+	machine := NewFSM[testPayload]("test", "idle", payload)
+	metadata := machine.Metadata()
+
+	if metadata.InstanceID != machine.InstanceID || metadata.TransitionID != machine.TtId ||
+		metadata.Name != "test" || metadata.CurrentState != "idle" {
+		t.Fatalf("unexpected metadata: %+v", metadata)
+	}
+	payload.Value = 9
+	var snapshotPayload testPayload
+	if err := json.Unmarshal(metadata.Payload, &snapshotPayload); err != nil {
+		t.Fatalf("unmarshal metadata payload: %v", err)
+	}
+	if snapshotPayload.Value != 3 {
+		t.Fatalf("metadata payload = %d, want immutable snapshot 3", snapshotPayload.Value)
+	}
+}
+
+func TestProcessEventCapturesEntryAndExitMetadata(t *testing.T) {
+	payload := &testPayload{Value: 3}
+	machine := NewFSM[testPayload]("test", "idle", payload)
+	entryTransitionID := machine.TtId
+	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[testPayload]{
+		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+			fsm.Payload.Value += 7
+			return nil
+		},
+	}))
+
+	trace, err := machine.ProcessEvent("start")
+	if err != nil {
+		t.Fatalf("ProcessEvent() error = %v", err)
+	}
+	entry, exit := trace.EntryMetadata, trace.ExitMetadata
+	if entry.CurrentState != "idle" || entry.ProcessingEvent != "start" || entry.TransitionID != entryTransitionID {
+		t.Fatalf("unexpected entry metadata: %+v", entry)
+	}
+	if exit.CurrentState != "running" || exit.ProcessingEvent != EventEmpty ||
+		exit.PreviousState != "idle" || exit.PreviousEvent != "start" || exit.TransitionID != trace.TtId {
+		t.Fatalf("unexpected exit metadata: %+v", exit)
+	}
+	var entryPayload, exitPayload testPayload
+	if err := json.Unmarshal(entry.Payload, &entryPayload); err != nil {
+		t.Fatalf("unmarshal entry metadata payload: %v", err)
+	}
+	if err := json.Unmarshal(exit.Payload, &exitPayload); err != nil {
+		t.Fatalf("unmarshal exit metadata payload: %v", err)
+	}
+	if entryPayload.Value != 3 || exitPayload.Value != 10 {
+		t.Fatalf("metadata payloads = entry %d, exit %d", entryPayload.Value, exitPayload.Value)
+	}
+
+	payload.Value = 99
+	if err := json.Unmarshal(trace.ExitMetadata.Payload, &exitPayload); err != nil || exitPayload.Value != 10 {
+		t.Fatalf("exit metadata was not copied: payload=%+v error=%v", exitPayload, err)
+	}
+}
+
+func TestProcessEventCapturesExitMetadataOnFailure(t *testing.T) {
+	payload := &testPayload{Value: 1}
+	machine := NewFSM[testPayload]("test", "idle", payload)
+	wantErr := errors.New("handler failed")
+	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[testPayload]{
+		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+			fsm.Payload.Value = 2
+			return wantErr
+		},
+	}))
+
+	trace, err := machine.ProcessEvent("start")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("ProcessEvent() error = %v", err)
+	}
+	var entryPayload, exitPayload testPayload
+	if err := json.Unmarshal(trace.EntryMetadata.Payload, &entryPayload); err != nil {
+		t.Fatalf("unmarshal entry metadata payload: %v", err)
+	}
+	if err := json.Unmarshal(trace.ExitMetadata.Payload, &exitPayload); err != nil {
+		t.Fatalf("unmarshal exit metadata payload: %v", err)
+	}
+	if entryPayload.Value != 1 || exitPayload.Value != 2 {
+		t.Fatalf("failed metadata payloads = entry %d, exit %d", entryPayload.Value, exitPayload.Value)
+	}
+	if trace.ExitMetadata.CurrentState != "idle" || trace.ExitMetadata.ProcessingEvent != EventEmpty || trace.FinalState != "idle" || trace.TransitionResult {
+		t.Fatalf("unexpected failed trace: %+v", trace)
+	}
+}
+
 func TestProcessEventPassesParamsToActorStages(t *testing.T) {
 	payload := &testPayload{}
 	machine := NewFSM[testPayload]("test", "idle", payload)
