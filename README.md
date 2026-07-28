@@ -6,11 +6,12 @@
 
 ```bash
 go run ./examples/basic
+go run ./examples/generated
 go run ./examples/async
 go run ./examples/server
 ```
 
-完整说明见 [`examples`](./examples/README.md)。
+`examples/generated` 会读取 `examples/generated/config.yaml` 启动可视化 Client Server，并每隔随机 3～5 秒触发当前状态下的一个合法事件。完整说明见 [`examples`](./examples/README.md)。
 
 ## 使用模板生成代码
 
@@ -25,15 +26,27 @@ go run gen/main.go -fsm ./gen/door.fsm -tpl ./gen/template -out ./generated
 - `out`：生成代码的父目录；省略时使用当前工作目录。
 - `c`：覆盖允许用户编辑的 `payload.go` 和各转移 Handler 文件。工厂、元数据和 `common.go` 始终根据描述文件刷新。
 
-描述文件必须提供 `PackageDir`、`Package` 和 `FSMEnginePackage`。其中 `FSMEnginePackage` 是 FSM 模块父级路径，例如当前模块使用：
+每份描述文件只生成一个状态机，必须使用单个 `FSM` 对象；不再支持 `FSMs` 列表或一份 YAML 生成多个 FSM。描述文件还必须提供 `PackageDir`、`Package` 和 `FSMEnginePackage`，其中 `FSMEnginePackage` 是 FSM 模块父级路径，例如：
 
 ```yaml
 PackageDir: example.com/project
 Package: door
 FSMEnginePackage: github.com/swkings
+State:
+  - Open
+  - Close
+Event:
+  - Lock
+  - Unlock
+FSM:
+  Name: Door
+  Initial: Close
+  Transition:
+    - Close -> Unlock -> Open
+    - Open -> Lock -> Close
 ```
 
-生成器会校验状态、事件、初始状态、转移格式、重复转移及 Go 标识符，并在输入无效时返回明确错误。
+生成器会校验状态、事件、初始状态、转移格式、重复转移及 Go 标识符，并在输入无效时返回明确错误。每条转移生成独立 Handler 文件，Handler 直接绑定到当前 FSM，不再生成跨 FSM 的名称判断或共享分发层。
 
 ## Handler 执行语义
 
@@ -99,41 +112,58 @@ _ = result
 
 运行中事件的取消是协作式的，Handler 可通过 `machine.GetEventContext()` 监听提交方的 `ctx.Done()`；若 Handler 长时间阻塞且不监听 context，FSM 无法强制终止它。应用退出时应从 Handler 外部调用 `Close`，用于清理剩余事件并等待队列 worker 结束。
 
-## 实时可视化 Server
+## 实时可视化
 
-可视化能力位于独立的 `github.com/swkings/fsm/visualization` 包。Server 使用一个普通配置结构创建，不再使用多组 Option：
+可视化能力位于独立的 `github.com/swkings/fsm/visualization` 包。业务进程和独立聚合服务使用同一个 `Server` 实现，但承担不同职责：
+
+- 业务进程内只有一个全局 Client Server，多个 FSM 在任意模块注册到该 Server，并在状态变化后通过进程内订阅主动 Push。
+- Client Server 同时托管当前进程的 React 可视化前端，可直接通过配置的地址访问。
+- 独立可视化服务不接收业务代码直接注册；它通过服务发现获得多个 Client Server 地址，再展开并 Pull 每个 Client Server 中的 FSM。
+
+### 配置业务进程 Client Server
+
+`NewServer(config)` 创建或返回进程内全局单例 Server；Server 仍由调用方显式启动：
 
 ```go
-server := visualization.NewServerWithConfig(visualization.ServerConfig{
-    Address:    "127.0.0.1:0",
-    TraceLimit: 100,
-})
-if err := server.Start(); err != nil {
+clientServer := visualization.NewServer(
+    visualization.VisualizationConfig{
+        ServerAddress: "0.0.0.0:5005",
+        TraceLimit:    100,
+        PathPrefix:    "production",
+    },
+)
+if err := clientServer.Start(); err != nil {
     return err
 }
-defer server.Close(context.Background())
+defer visualization.ShutdownClientServer(context.Background())
+
+fmt.Println(visualization.ClientServerURL())
 ```
 
-### 注册接口
-
-进程内客户端只有一个注册入口：
+内置 `fsm.FSM` 从 Payload 获取每个实例的显示名称和相对目录：
 
 ```go
-registration, err := server.Register(ctx, client, visualization.RegistrationConfig{
-    DisplayName: "Order Worker",
-    Path:        "production/orders",
-})
-defer registration.Unregister()
+func (payload OrderPayload) DisplayName() string {
+    return payload.OrderName
+}
+
+func (payload OrderPayload) Category() string {
+    return "orders/checkout"
+}
+
+orderRegistration, err := visualization.RegisterClient(ctx, orderFSM)
+paymentRegistration, err := visualization.RegisterClient(ctx, paymentFSM)
 ```
 
-Server 将注册阶段和运行阶段明确分开：
+`PathPrefix` 与 Payload 的 `Category()` 使用 `/` 组合，例如上例最终目录为 `production/orders/checkout`；两者都允许为空。Payload 对应方法返回空字符串时，显示名称回退到 FSM 名称，目录仅使用非空部分。
+
+内置 `fsm.FSM` 已实现 `visualization.PushClient`。注册时 Server 只读取一次完整 `Definition`；注册完成后，FSM 事件结束会将 `RealtimeData` 和增量 Trace 主动推送到 Client Server。取消注册 context、调用 `Unregister` 或关闭 Client Server 都会移除订阅。
+
+第三方状态机可以实现相同接口。实现 `PushClient` 时默认采用 Push；只实现 `Client` 时默认采用 Pull。需要指定显示信息、目录、模式或 Pull 周期时，由 Client 实现 `RegistrationConfigProvider`：
 
 ```go
 type Client interface {
-    // 仅在 Register 时调用一次，返回 FSM 自身标识和完整状态图。
     VisualizationDefinition() Definition
-
-    // 注册完成后仅返回当前状态、Payload、运行信息和 Trace。
     VisualizationSnapshot(context.Context) (RealtimeData, error)
 }
 
@@ -142,124 +172,70 @@ type PushClient interface {
     SubscribeVisualization(PublishFunc) func()
 }
 
-type PublishFunc func(RealtimeData, ...TraceSnapshot) error
+type RegistrationConfigProvider interface {
+    VisualizationRegistrationConfig() RegistrationConfig
+}
 ```
 
-- **注册阶段**：Server 只调用一次 `VisualizationDefinition`，缓存 FSM 自身 ID、名称、描述、完整状态、完整事件和状态转移图；显示名称、目录、采集模式和 pull 间隔由 `RegistrationConfig` 随 `Register` 传入。
-- **pull 模式**：Server 注册时读取一次 `RealtimeData`，之后按照 `RegistrationConfig.PullInterval` 拉取实时数据，默认间隔 5 秒。
-- **push 模式**：客户端状态变化时通过 `PublishFunc` 直接提交 `RealtimeData` 和可选的增量 Trace；Server 不会再反向读取或同步静态定义。
-- Web/API 使用的 `Snapshot` 由 Server 将缓存的 `Definition` 与最新 `RealtimeData` 合成。当前可接收事件也由 Server 根据当前状态和静态转移图计算。
-- 取消注册 context、调用 `Unregister` 或关闭 Server 都会停止 pull/订阅，并关闭 `Registration.Done()`。
+### 独立可视化服务聚合多个客户端
 
-第三方 pull FSM 只需要实现两个方法：
+注册中心、Consul、Kubernetes 或 etcd 发现的是“业务进程的 Client Server 地址”，不是单个 FSM 地址。独立服务使用 `RegisterClientServerDiscovery` 注册发现源：
 
 ```go
-func (machine *MyFSM) VisualizationDefinition() visualization.Definition {
-    return visualization.Definition{
-        ID:           machine.ID,
-        Name:         "order",
-        States:       []string{"created", "paid", "shipped"},
-        Events:       []string{"pay", "ship"},
-        Transitions: []visualization.TransitionSnapshot{
-            {FromState: "created", Event: "pay", ToState: "paid"},
-            {FromState: "paid", Event: "ship", ToState: "shipped"},
-        },
-    }
-}
-
-func (machine *MyFSM) VisualizationSnapshot(
-    ctx context.Context,
-) (visualization.RealtimeData, error) {
-    return visualization.RealtimeData{
-        CurrentState: machine.State(),
-        Payload:      machine.PayloadJSON(),
-    }, nil
-}
-
-registration, err := server.Register(ctx, machine, visualization.RegistrationConfig{
-    DisplayName:  "Order Service",
-    Path:         "region-a/services/orders",
-    Mode:         visualization.ModePull,
-    PullInterval: 3 * time.Second,
+aggregate := visualization.NewServerWithConfig(visualization.ServerConfig{
+    Address:    "0.0.0.0:5005",
+    TraceLimit: 100,
 })
-```
-
-内置 `fsm.FSM` 已直接实现 `visualization.PushClient`。Definition 直接使用 FSM 的 `instanceID`、`Name`、`Describe` 并自动提取完整状态图；FSM 内部不保存任何可视化配置，事件完成后只推送实时数据：
-
-```go
-registration, err := server.Register(ctx, orderFSM, visualization.RegistrationConfig{
-    DisplayName: "Order 1001",
-    Path:        "production/orders/checkout",
-})
-```
-
-跨进程 push 客户端使用两阶段协议：
-
-1. 首次向 `POST /api/fsms` 提交完整 `Definition`。
-2. 后续向 `POST /api/push/{id}` 只提交 `RealtimeData`。
-
-实时 Push 请求如果夹带 `states`、`events` 或 `transitions` 等静态字段会被拒绝，未注册的 ID 也不会被自动创建。
-
-### 服务发现与远程 Pull
-
-Pull 模式可以跨进程工作。远程 FSM 使用 `NewClientHandler` 暴露统一客户端接口：
-
-```go
-mux.Handle(
-    "/fsm/order/",
-    http.StripPrefix("/fsm/order", visualization.NewClientHandler(orderFSM)),
-)
-```
-
-客户端接口为：
-
-- `GET {endpoint}/definition`：返回一次性 `Definition`。
-- `GET {endpoint}/realtime`：返回持续变化的 `RealtimeData`。
-
-可视化 Server 定义了通用服务发现接口，可接入 Consul、Kubernetes、etcd 或其他注册中心：
-
-```go
-type ServiceDiscovery interface {
-    Discover(context.Context) ([]DiscoveredService, error)
+if err := aggregate.Start(); err != nil {
+    return err
 }
 
-discovery, err := server.RegisterDiscovery(
+discovery, err := aggregate.RegisterClientServerDiscovery(
     ctx,
-    myDiscovery,
+    &visualization.HTTPServiceDiscovery{
+        Endpoint: "http://registry:8080/visualization-servers",
+    },
     visualization.DiscoveryConfig{
         ID:              "production",
-        PathPrefix:      "production/discovered",
+        PathPrefix:      "production",
         RefreshInterval: 30 * time.Second,
         PullInterval:    5 * time.Second,
     },
 )
 ```
 
-内置 `HTTPServiceDiscovery` 会定期请求一个 JSON 服务列表：
+`HTTPServiceDiscovery.Endpoint` 既可以填写返回 Client Server 列表的注册中心接口，也可以直接填写单个 Client Server 基础地址，例如 `http://order-service-1:5005`。直接地址会通过 `/api/targets` 自动识别并作为单实例发现源添加。
+
+HTTP 注册中心接口返回 Client Server 列表：
 
 ```json
 {
   "services": [
     {
-      "key": "order-1",
-      "endpoint": "http://order-1:8080/fsm/order",
-      "displayName": "Order 1",
-      "path": "orders",
-      "pullIntervalSeconds": 2
+      "key": "order-service-1",
+      "endpoint": "http://order-service-1:5005",
+      "path": "orders"
+    },
+    {
+      "key": "payment-service-1",
+      "endpoint": "http://payment-service-1:5005",
+      "path": "payments"
     }
   ]
 }
 ```
 
-Server 会自动完成以下操作：
+聚合服务会执行以下流程：
 
-- 新发现的服务：调用 `/definition` 获取完整状态图并注册为 pull FSM。
-- 已注册服务：按照 pull 周期调用 `/realtime`，由 Server 主动更新实时数据。
-- 服务地址或配置变化：自动注销旧实例并重新注册。
-- 服务从发现结果中消失：自动注销对应 FSM。
-- 拉取失败：保留静态状态图和最后一次实时数据，并通过 `collectionError` 展示错误。
+- 请求每个 Client Server 的 `GET /api/targets`，获取该进程当前注册的全部 FSM。
+- 对每个 FSM 分别请求 `/api/clients/{id}/definition` 和 `/api/clients/{id}/realtime`。
+- 以 Client Server 的发现 key 为 FSM ID 增加来源命名空间，因此不同进程可以注册相同的本地 FSM ID。
+- Client Server 新增或注销 FSM、服务地址发生变化或实例从发现结果中消失时，聚合服务会自动同步。
+- Pull 失败时保留静态状态图与最后一次实时数据，并通过 `collectionError` 展示错误。
 
-Web Header 最右侧的设置图标可进入设置页，并在“服务发现”设置栏中配置 HTTP 发现地址、目录前缀、发现周期和 pull 周期，并查看已发现数量、已注册数量和最近错误。对应 API 为 `GET/POST /api/discoveries`、`POST /api/discoveries/{id}/refresh` 和 `DELETE /api/discoveries/{id}`。这些配置会让 Server 访问指定网络地址，公开部署时必须为配置 API 增加鉴权和网络访问限制。
+Web Header 最右侧的设置图标可进入设置页，并在“服务发现”设置栏中配置 HTTP 注册中心接口或直接 Client Server 地址、目录前缀、发现周期和 Pull 周期。对应 API 为 `GET/POST /api/discoveries`、`POST /api/discoveries/{id}/refresh` 和 `DELETE /api/discoveries/{id}`。这些配置会让 Server 访问指定网络地址，公开部署时必须增加鉴权和网络访问限制。
+
+底层 `RegisterDiscovery` 与 `NewClientHandler` 仍可用于直接接入单个、非 Client Server 管理的第三方远程状态机；业务进程和独立聚合服务应优先采用上述 Client Server 架构。
 
 Web 页面实时展示：
 
@@ -271,7 +247,7 @@ Web 页面实时展示：
 - Active Event 与 Payload 由顶部 Nav 独立打开或关闭；Trace 固定在底部状态栏并可展开完整记录。Header 可调节浮层和侧栏透明度，默认 85%。
 - 明暗主题切换、pull 采集错误以及动态注册/注销。
 
-HTTP 接口为 `GET/POST /api/fsms`、`GET /api/fsms/{id}`、`POST /api/push/{id}`，实时更新使用 `/api/events` SSE。`Handler()` 可以挂载到已有 HTTP 服务。Server 不提供鉴权，绑定公网地址时应由应用或反向代理增加认证和访问控制。
+HTTP 接口包括 `GET/POST /api/fsms`、`GET /api/fsms/{id}`、`POST /api/push/{id}`；Client Server 另提供 `GET /api/targets`、`GET /api/clients/{id}/definition` 和 `GET /api/clients/{id}/realtime` 供独立服务聚合，实时更新使用 `/api/events` SSE。`Handler()` 可以挂载到已有 HTTP 服务。Server 不提供鉴权，绑定公网地址时应由应用或反向代理增加认证和访问控制。
 
 可视化采用前后端分离结构：React/Vite 源码位于 `visualization/frontend`，Go 包只提供 `/api/*` 与 SSE，并通过 `go:embed` 托管生产构建。开发时分别启动 Go Server 与 `npm run dev`，Vite 默认把 `/api` 代理到 `http://127.0.0.1:5005`；生产构建可执行 `go generate ./visualization` 或在前端目录执行 `npm ci && npm run build`。
 

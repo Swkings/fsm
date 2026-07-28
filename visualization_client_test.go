@@ -13,9 +13,9 @@ type visualizationTestPayload struct {
 	Count int `json:"count"`
 }
 
-func (p visualizationTestPayload) JSON() ([]byte, error) {
-	return json.Marshal(p)
-}
+func (p visualizationTestPayload) JSON() ([]byte, error) { return json.Marshal(p) }
+func (p visualizationTestPayload) DisplayName() string   { return "" }
+func (p visualizationTestPayload) Category() string      { return "" }
 
 func TestFSMImplementsPushClientDirectly(t *testing.T) {
 	server := visualization.NewServerWithConfig(visualization.ServerConfig{TraceLimit: 2})
@@ -45,6 +45,13 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 	if !machine.hasRuntimeObservers() {
 		t.Fatal("runtime observer was not installed")
 	}
+
+	machine.SetCurrentState("opened")
+	stateOnlySnapshot, exists := server.Snapshot(registration.ID())
+	if !exists || stateOnlySnapshot.CurrentState != "opened" || len(stateOnlySnapshot.Traces) != 0 {
+		t.Fatalf("state-only push snapshot = %+v exists=%t", stateOnlySnapshot, exists)
+	}
+	machine.SetCurrentState("closed")
 
 	if _, err = machine.ProcessEvent("open"); err != nil {
 		t.Fatalf("process event: %v", err)
@@ -81,9 +88,9 @@ type emptyPayload struct {
 	Data struct{}
 }
 
-func (d emptyPayload) JSON() ([]byte, error) {
-	return json.Marshal(d)
-}
+func (d emptyPayload) JSON() ([]byte, error) { return json.Marshal(d) }
+func (d emptyPayload) DisplayName() string   { return "" }
+func (d emptyPayload) Category() string      { return "" }
 
 func TestFSMUsesDefaultVisualizationConfig(t *testing.T) {
 	server := visualization.NewServer()

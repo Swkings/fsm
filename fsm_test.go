@@ -14,9 +14,9 @@ type testPayload struct {
 	Value int
 }
 
-func (payload testPayload) JSON() ([]byte, error) {
-	return json.Marshal(payload)
-}
+func (payload testPayload) JSON() ([]byte, error) { return json.Marshal(payload) }
+func (payload testPayload) DisplayName() string   { return "" }
+func (payload testPayload) Category() string      { return "" }
 
 func TestProcessEventRunsHandlerStagesInOrder(t *testing.T) {
 	payload := &testPayload{}

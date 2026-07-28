@@ -99,9 +99,11 @@ func NewTransitionItem[T PayloadT](
 }
 
 type (
-	// PayloadT 是业务数据类型，必须实现 JSON() 方法。
+	// PayloadT 是业务数据类型
 	PayloadT interface {
 		JSON() ([]byte, error)
+		DisplayName() string
+		Category() string
 	}
 
 	// Actor 是 Handler 各执行阶段的函数类型，可通过 FSM 访问状态机和业务载荷。

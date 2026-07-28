@@ -67,6 +67,24 @@ func (fsm *FSM[T]) VisualizationDefinition() visualization.Definition {
 	}
 }
 
+// VisualizationRegistrationConfig 从 Payload 获取可视化显示名称与相对目录。
+// Payload 的 DisplayName() 与 Category() 返回空字符串时表示不设置。
+func (fsm *FSM[T]) VisualizationRegistrationConfig() visualization.RegistrationConfig {
+	if fsm == nil {
+		return visualization.RegistrationConfig{}
+	}
+	fsm.stateLock.RLock()
+	payload := fsm.Payload
+	fsm.stateLock.RUnlock()
+	if payload == nil {
+		return visualization.RegistrationConfig{}
+	}
+	return visualization.RegistrationConfig{
+		DisplayName: (*payload).DisplayName(),
+		Path:        (*payload).Category(),
+	}
+}
+
 // VisualizationSnapshot 只返回易变的实时数据，不再重复构造状态图。
 func (fsm *FSM[T]) VisualizationSnapshot(ctx context.Context) (visualization.RealtimeData, error) {
 	if fsm == nil {
@@ -89,7 +107,12 @@ func (fsm *FSM[T]) SubscribeVisualization(publish visualization.PublishFunc) fun
 	}
 	observerID := uuid.NewString()
 	return fsm.addRuntimeObserver(observerID, func(trace *TransitionTrace) {
-		_ = publish(fsm.runtimeVisualizationData(), newVisualizationTraceSnapshot(*trace))
+		data := fsm.runtimeVisualizationData()
+		if trace == nil {
+			_ = publish(data)
+			return
+		}
+		_ = publish(data, newVisualizationTraceSnapshot(*trace))
 	})
 }
 
