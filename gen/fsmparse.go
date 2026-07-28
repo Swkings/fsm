@@ -22,7 +22,7 @@ const (
 
 type FSMMetaInfo struct {
 	Name       string
-	Describe   string `yaml:"Describe,omitempty"`
+	Describe   string
 	Initial    string
 	Transition []string
 }
@@ -33,7 +33,12 @@ type FSMYaml struct {
 	FSMEnginePackage string
 	State            []string
 	Event            []string
-	FSMs             []FSMMetaInfo
+	FSM              FSMMetaInfo
+}
+
+type Symbol struct {
+	Identifier string
+	Value      string
 }
 
 type Transition struct {
@@ -53,9 +58,9 @@ type FSMData struct {
 	PackageDir       string
 	Package          string
 	FSMEnginePackage string
-	States           []string
-	Events           []string
-	FSMs             []FSM
+	States           []Symbol
+	Events           []Symbol
+	FSM              FSM
 }
 
 func ParseFSMData(fsmYaml FSMYaml) (FSMData, error) {
@@ -81,60 +86,49 @@ func ParseFSMData(fsmYaml FSMYaml) (FSMData, error) {
 		return FSMData{}, err
 	}
 
-	fsms := make([]FSM, 0, len(fsmYaml.FSMs))
-	fsmNames := make(map[string]struct{}, len(fsmYaml.FSMs))
-	for _, meta := range fsmYaml.FSMs {
-		name := strings.TrimSpace(meta.Name)
-		if !token.IsIdentifier(name) || token.Lookup(name).IsKeyword() {
-			return FSMData{}, fmt.Errorf("invalid FSM name %q", meta.Name)
-		}
-		if _, exists := fsmNames[name]; exists {
-			return FSMData{}, fmt.Errorf("duplicate FSM name %q", name)
-		}
-		fsmNames[name] = struct{}{}
+	meta := fsmYaml.FSM
+	name := strings.TrimSpace(meta.Name)
+	if name == "" {
+		return FSMData{}, fmt.Errorf("FSM.Name is required")
+	}
+	if !token.IsIdentifier(name) || token.Lookup(name).IsKeyword() {
+		return FSMData{}, fmt.Errorf("invalid FSM name %q", meta.Name)
+	}
 
-		initialName := strings.TrimSpace(meta.Initial)
-		if _, exists := stateSet[initialName]; !exists {
-			return FSMData{}, fmt.Errorf("FSM %q uses unknown initial state %q", name, initialName)
+	initialName := strings.TrimSpace(meta.Initial)
+	if _, exists := stateSet[initialName]; !exists {
+		return FSMData{}, fmt.Errorf("FSM %q uses unknown initial state %q", name, initialName)
+	}
+
+	transitions := make([]Transition, 0, len(meta.Transition))
+	transitionKeys := make(map[string]struct{}, len(meta.Transition))
+	for index, expression := range meta.Transition {
+		parts := strings.Split(expression, "->")
+		if len(parts) != 3 {
+			return FSMData{}, fmt.Errorf("FSM %q transition %d must use From -> Event -> To format: %q", name, index+1, expression)
 		}
-
-		transitions := make([]Transition, 0, len(meta.Transition))
-		transitionKeys := make(map[string]struct{}, len(meta.Transition))
-		for index, expression := range meta.Transition {
-			parts := strings.Split(expression, "->")
-			if len(parts) != 3 {
-				return FSMData{}, fmt.Errorf("FSM %q transition %d must use From -> Event -> To format: %q", name, index+1, expression)
-			}
-			from := strings.TrimSpace(parts[0])
-			event := strings.TrimSpace(parts[1])
-			to := strings.TrimSpace(parts[2])
-			if _, exists := stateSet[from]; !exists {
-				return FSMData{}, fmt.Errorf("FSM %q transition %d uses unknown source state %q", name, index+1, from)
-			}
-			if _, exists := eventSet[event]; !exists {
-				return FSMData{}, fmt.Errorf("FSM %q transition %d uses unknown event %q", name, index+1, event)
-			}
-			if _, exists := stateSet[to]; !exists {
-				return FSMData{}, fmt.Errorf("FSM %q transition %d uses unknown target state %q", name, index+1, to)
-			}
-
-			key := from + "\x00" + event
-			if _, exists := transitionKeys[key]; exists {
-				return FSMData{}, fmt.Errorf("FSM %q contains duplicate transition for state %q and event %q", name, from, event)
-			}
-			transitionKeys[key] = struct{}{}
-			transitions = append(transitions, Transition{
-				From:  statePrefix + from,
-				Event: eventPrefix + event,
-				To:    statePrefix + to,
-			})
+		from := strings.TrimSpace(parts[0])
+		event := strings.TrimSpace(parts[1])
+		to := strings.TrimSpace(parts[2])
+		if _, exists := stateSet[from]; !exists {
+			return FSMData{}, fmt.Errorf("FSM %q transition %d uses unknown source state %q", name, index+1, from)
+		}
+		if _, exists := eventSet[event]; !exists {
+			return FSMData{}, fmt.Errorf("FSM %q transition %d uses unknown event %q", name, index+1, event)
+		}
+		if _, exists := stateSet[to]; !exists {
+			return FSMData{}, fmt.Errorf("FSM %q transition %d uses unknown target state %q", name, index+1, to)
 		}
 
-		fsms = append(fsms, FSM{
-			Name:        name,
-			Describe:    meta.Describe,
-			Initial:     statePrefix + initialName,
-			Transitions: transitions,
+		key := from + "\x00" + event
+		if _, exists := transitionKeys[key]; exists {
+			return FSMData{}, fmt.Errorf("FSM %q contains duplicate transition for state %q and event %q", name, from, event)
+		}
+		transitionKeys[key] = struct{}{}
+		transitions = append(transitions, Transition{
+			From:  statePrefix + from,
+			Event: eventPrefix + event,
+			To:    statePrefix + to,
 		})
 	}
 
@@ -144,12 +138,17 @@ func ParseFSMData(fsmYaml FSMYaml) (FSMData, error) {
 		FSMEnginePackage: enginePackage,
 		States:           states,
 		Events:           events,
-		FSMs:             fsms,
+		FSM: FSM{
+			Name:        name,
+			Describe:    meta.Describe,
+			Initial:     statePrefix + initialName,
+			Transitions: transitions,
+		},
 	}, nil
 }
 
-func prefixedIdentifiers(values []string, prefix string, kind string) ([]string, map[string]struct{}, error) {
-	result := make([]string, 0, len(values))
+func prefixedIdentifiers(values []string, prefix string, kind string) ([]Symbol, map[string]struct{}, error) {
+	result := make([]Symbol, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, raw := range values {
 		value := strings.TrimSpace(raw)
@@ -161,7 +160,7 @@ func prefixedIdentifiers(values []string, prefix string, kind string) ([]string,
 			return nil, nil, fmt.Errorf("duplicate %s %q", kind, value)
 		}
 		seen[value] = struct{}{}
-		result = append(result, identifier)
+		result = append(result, Symbol{Identifier: identifier, Value: value})
 	}
 	return result, seen, nil
 }

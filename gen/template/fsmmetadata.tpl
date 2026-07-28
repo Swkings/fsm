@@ -5,20 +5,16 @@ package types
 
 import "{{.FSMData.FSMEnginePackage}}/fsm"
 
+var FSMName{{.FSMData.FSM.Name}} = fsm.FSMName("{{.FSMData.FSM.Name}}")
+
 var (
-    {{- range $fsm := .FSMData.FSMs}}
-    FSMName{{$fsm.Name}} = fsm.FSMName("{{$fsm.Name}}")
+    {{- range .FSMData.States}}
+    {{.Identifier}} = fsm.FSMState("{{.Value}}")
     {{- end}}
 )
 
 var (
-    {{- range $state := .FSMData.States}}
-    {{$state}} = fsm.FSMState("{{$state}}")
-    {{- end}}
-)
-
-var (
-    {{- range $event := .FSMData.Events}}
-    {{$event}} = fsm.FSMEvent("{{$event}}")
+    {{- range .FSMData.Events}}
+    {{.Identifier}} = fsm.FSMEvent("{{.Value}}")
     {{- end}}
 )

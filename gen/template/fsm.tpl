@@ -9,16 +9,15 @@ import (
 	"{{.FSMData.PackageDir}}/{{.FSMData.Package}}/types"
 )
 
-{{range $fsm := .FSMData.FSMs}}
-func NewFSM{{$fsm.Name}}() *fsm.FSM[types.Payload] {
-	f := fsm.NewFSM[types.Payload](types.FSMName{{$fsm.Name}}, types.{{$fsm.Initial}})
+func NewFSM{{.FSMData.FSM.Name}}() *fsm.FSM[types.Payload] {
+	f := fsm.NewFSM[types.Payload](types.FSMName{{.FSMData.FSM.Name}}, types.{{.FSMData.FSM.Initial}})
+	f.Describe = {{printf "%q" .FSMData.FSM.Describe}}
 
 	f.SetTransitions(
-		{{- range $transition := $fsm.Transitions}}
-		fsm.NewTransitionItem(types.{{$transition.Event}}, types.{{$transition.From}}, types.{{$transition.To}}, handlers.GetHandler_{{$transition.Event}}_{{$transition.From}}()),
+		{{- range .FSMData.FSM.Transitions}}
+		fsm.NewTransitionItem(types.{{.Event}}, types.{{.From}}, types.{{.To}}, handlers.GetHandler_{{.Event}}_{{.From}}()),
 		{{- end}}
 	)
 
 	return f
 }
-{{end}}

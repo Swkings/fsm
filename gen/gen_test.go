@@ -23,7 +23,7 @@ func TestParseFSMDataValidatesTransitionInput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			input := validFSMYAML()
-			input.FSMs[0].Transition = []string{tt.transition}
+			input.FSM.Transition = []string{tt.transition}
 			_, err := ParseFSMData(input)
 			if err == nil || !strings.Contains(err.Error(), tt.wantText) {
 				t.Fatalf("ParseFSMData() error = %v, want %q", err, tt.wantText)
@@ -32,15 +32,79 @@ func TestParseFSMDataValidatesTransitionInput(t *testing.T) {
 	}
 }
 
+func TestLoadDataAcceptsSingleFSMObject(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "door.fsm")
+	content := []byte(`PackageDir: example.com/demo
+Package: door
+FSMEnginePackage: github.com/swkings
+State: [Idle, Running]
+Event: [Start]
+FSM:
+  Name: Door
+  Describe: Door from YAML
+  Initial: Idle
+  Transition:
+    - Idle -> Start -> Running
+`)
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var input FSMYaml
+	if err := LoadData(path, &input); err != nil {
+		t.Fatal(err)
+	}
+	data, err := ParseFSMData(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.FSM.Name != "Door" || data.FSM.Describe != "Door from YAML" || len(data.FSM.Transitions) != 1 {
+		t.Fatalf("parsed FSM = %+v", data.FSM)
+	}
+}
+
+func TestLegacyFSMsListIsRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.fsm")
+	content := []byte(`PackageDir: example.com/demo
+Package: door
+FSMEnginePackage: github.com/swkings
+State: [Idle, Running]
+Event: [Start]
+FSMs:
+  - Name: Door
+    Initial: Idle
+    Transition:
+      - Idle -> Start -> Running
+`)
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var input FSMYaml
+	err := LoadData(path, &input)
+	if err == nil {
+		_, err = ParseFSMData(input)
+	}
+	if err == nil {
+		t.Fatal("legacy FSMs list was accepted")
+	}
+}
+
+func TestParseFSMDataRequiresFSM(t *testing.T) {
+	input := validFSMYAML()
+	input.FSM = FSMMetaInfo{}
+	if _, err := ParseFSMData(input); err == nil || !strings.Contains(err.Error(), "FSM.Name is required") {
+		t.Fatalf("ParseFSMData() error = %v", err)
+	}
+}
+
 func TestParseFSMDataRejectsDuplicateTransition(t *testing.T) {
 	input := validFSMYAML()
-	input.FSMs[0].Transition = append(input.FSMs[0].Transition, input.FSMs[0].Transition[0])
+	input.FSM.Transition = append(input.FSM.Transition, input.FSM.Transition[0])
 	if _, err := ParseFSMData(input); err == nil || !strings.Contains(err.Error(), "duplicate transition") {
 		t.Fatalf("ParseFSMData() error = %v", err)
 	}
 }
 
-func TestGeneratorsProduceStableValidMultiHandlerCode(t *testing.T) {
+func TestGeneratorsProduceStableValidHandlerCode(t *testing.T) {
 	data, err := ParseFSMData(validFSMYAML())
 	if err != nil {
 		t.Fatal(err)
@@ -51,8 +115,23 @@ func TestGeneratorsProduceStableValidMultiHandlerCode(t *testing.T) {
 	if err := GenFSM(outputDir, "test.fsm", templateDir, data, true); err != nil {
 		t.Fatal(err)
 	}
+	factory, err := os.ReadFile(filepath.Join(outputDir, data.Package, "fsmfactory.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(factory), `f.Describe = "Door workflow"`) {
+		t.Fatalf("generated factory missing description:\n%s", factory)
+	}
 	if err := GenTypes(outputDir, "test.fsm", templateDir, data, true); err != nil {
 		t.Fatal(err)
+	}
+	metadata, err := os.ReadFile(filepath.Join(outputDir, data.Package, "types", "fsmmetadata.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataText := string(metadata)
+	if !strings.Contains(metadataText, `fsm.FSMState("Idle")`) || !strings.Contains(metadataText, `fsm.FSMEvent("Start")`) {
+		t.Fatalf("generated metadata does not preserve YAML values:\n%s", metadata)
 	}
 	if err := GenHandlers(outputDir, "test.fsm", templateDir, data, true); err != nil {
 		t.Fatal(err)
@@ -63,7 +142,8 @@ func TestGeneratorsProduceStableValidMultiHandlerCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(handlerCode), "_BeforeHandlerForDoor") || !strings.Contains(string(handlerCode), "_AfterHandlerForDoor") {
+	handlerText := string(handlerCode)
+	if !strings.Contains(handlerText, "_BeforeHandler_EventStart_StateIdle") || !strings.Contains(handlerText, "_AfterHandler_EventStart_StateIdle") {
 		t.Fatalf("generated handler does not contain all stages:\n%s", handlerCode)
 	}
 
@@ -71,6 +151,9 @@ func TestGeneratorsProduceStableValidMultiHandlerCode(t *testing.T) {
 	firstCommon, err := os.ReadFile(commonPath)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(string(firstCommon), "switch f.Name") || strings.Contains(string(firstCommon), "FSMName") || strings.Contains(handlerText, "ForDoor") {
+		t.Fatalf("generated handlers still contain multi-FSM dispatch:\n%s\n%s", firstCommon, handlerCode)
 	}
 	if err := GenHandlers(outputDir, "test.fsm", templateDir, data, false); err != nil {
 		t.Fatal(err)
@@ -179,12 +262,11 @@ func validFSMYAML() FSMYaml {
 		FSMEnginePackage: "github.com/swkings",
 		State:            []string{"Idle", "Running"},
 		Event:            []string{"Start", "Stop"},
-		FSMs: []FSMMetaInfo{
-			{
-				Name:       "Door",
-				Initial:    "Idle",
-				Transition: []string{"Idle -> Start -> Running", "Running -> Stop -> Idle"},
-			},
+		FSM: FSMMetaInfo{
+			Name:       "Door",
+			Describe:   "Door workflow",
+			Initial:    "Idle",
+			Transition: []string{"Idle -> Start -> Running", "Running -> Stop -> Idle"},
 		},
 	}
 }

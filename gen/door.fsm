@@ -4,20 +4,12 @@ Package: door
 State:
     - Open
     - Close
-Event: 
+Event:
     - Lock
     - Unlock
-FSMs:
-    - 
-      Name: Door
-      Initial: Close
-      Transition:
+FSM:
+    Name: Door
+    Initial: Close
+    Transition:
         - Close -> Unlock -> Open
         - Open -> Lock -> Close
-    - 
-      Name: SmartDoor
-      Initial: Close
-      Transition:
-        - Close -> Unlock -> Open
-        - Open -> Lock -> Close
-        - Open -> Unlock -> Open

@@ -5,24 +5,20 @@ import (
 	"{{.PackageDir}}/{{.Package}}/types"
 )
 
-{{range $fsmName := .FSMNameList}}
-// FSM: {{$fsmName}}
-func _BeforeHandlerFor{{$fsmName}}_{{$.Transition.Event}}_{{$.Transition.From}}(f *fsm.FSM[types.Payload]) error {
+func _BeforeHandler_{{.Transition.Event}}_{{.Transition.From}}(f *fsm.FSM[types.Payload]) error {
 	// TODO: your code
 
 	return nil
 }
 
-func _HandlerFor{{$fsmName}}_{{$.Transition.Event}}_{{$.Transition.From}}(f *fsm.FSM[types.Payload]) error {
+func _Handler_{{.Transition.Event}}_{{.Transition.From}}(f *fsm.FSM[types.Payload]) error {
 	// TODO: your code
 
 	return nil
 }
 
-func _AfterHandlerFor{{$fsmName}}_{{$.Transition.Event}}_{{$.Transition.From}}(f *fsm.FSM[types.Payload]) error {
+func _AfterHandler_{{.Transition.Event}}_{{.Transition.From}}(f *fsm.FSM[types.Payload]) error {
 	// TODO: your code
 
 	return nil
 }
-
-{{end}}
