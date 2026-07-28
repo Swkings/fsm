@@ -141,7 +141,14 @@ func TestDiscoveryConfigurationHTTPAPI(t *testing.T) {
 		definition: Definition{ID: "api-worker", Name: "worker", States: []string{"idle"}},
 		data:       RealtimeData{CurrentState: "idle"},
 	}
-	clientServer := httptest.NewServer(NewClientHandler(client))
+	clientVisualizationServer := NewServer()
+	defer clientVisualizationServer.Close(context.Background())
+	if _, err := clientVisualizationServer.Register(context.Background(), client, RegistrationConfig{
+		Mode: ModePull, PullInterval: time.Hour,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clientServer := httptest.NewServer(clientVisualizationServer.Handler())
 	defer clientServer.Close()
 	fixture := &discoveryFixture{}
 	fixture.set(httpDiscoveredService{Key: "worker", Endpoint: clientServer.URL, Path: "workers"})
@@ -167,7 +174,7 @@ func TestDiscoveryConfigurationHTTPAPI(t *testing.T) {
 	}
 	_ = response.Body.Close()
 	waitFor(t, func() bool {
-		snapshot, ok := server.Snapshot("api-worker")
+		snapshot, ok := server.Snapshot("remote:worker:api-worker")
 		return ok && snapshot.Path == "external/workers"
 	})
 
@@ -204,7 +211,7 @@ func TestDiscoveryConfigurationHTTPAPI(t *testing.T) {
 	}
 	_ = response.Body.Close()
 	waitFor(t, func() bool {
-		_, ok := server.Snapshot("api-worker")
+		_, ok := server.Snapshot("remote:worker:api-worker")
 		return !ok
 	})
 }

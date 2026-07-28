@@ -16,6 +16,8 @@ func newHTTPHandler(server *Server) http.Handler {
 	mux.Handle("/", newFrontendHandler())
 	mux.HandleFunc("/api/fsms", server.handleFSMList)
 	mux.HandleFunc("/api/fsms/", server.handleFSMDetail)
+	mux.HandleFunc("/api/targets", server.handleClientServerTargets)
+	mux.HandleFunc("/api/clients/", server.handleExportedClient)
 	mux.HandleFunc("/api/events", server.handleEvents)
 	mux.HandleFunc("/api/discoveries", server.handleDiscoveries)
 	mux.HandleFunc("/api/discoveries/", server.handleDiscoveryDetail)

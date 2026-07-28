@@ -58,6 +58,7 @@ func (registration *Registration) Unregister() bool {
 type Server struct {
 	address    string
 	traceLimit int
+	pathPrefix string
 	handler    http.Handler
 
 	mu      sync.RWMutex
@@ -73,8 +74,16 @@ type Server struct {
 	listener    net.Listener
 }
 
-// NewServer 使用默认配置创建未启动的 Server。
-func NewServer() *Server { return NewServerWithConfig(ServerConfig{}) }
+// NewServer 创建未启动的 Server。无参调用创建普通独立 Server；传入配置时创建或返回进程内全局单例 Server。
+func NewServer(configs ...VisualizationConfig) *Server {
+	if len(configs) == 0 {
+		return NewServerWithConfig(ServerConfig{})
+	}
+	if len(configs) > 1 {
+		panic("visualization.NewServer accepts at most one config")
+	}
+	return newClientServer(configs[0])
+}
 
 // NewServerWithConfig 使用一个普通配置结构创建未启动的 Server。
 func NewServerWithConfig(config ServerConfig) *Server {

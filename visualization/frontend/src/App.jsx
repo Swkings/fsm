@@ -183,14 +183,14 @@ function DiscoverySettings({ open, onClose, discoveries, reloadDiscoveries, relo
       <section className="settings-shell">
         <header className="settings-head"><div className="settings-head-title"><strong id="settingsTitle">设置</strong><span>管理 Observatory 的连接与运行选项</span></div><button className="icon-button settings-close" type="button" aria-label="关闭设置" title="关闭" onClick={onClose}>×</button></header>
         <div className="settings-layout">
-          <nav className="settings-nav" aria-label="设置分类"><span className="settings-nav-label">连接</span><button className="settings-nav-item active" type="button" aria-current="page"><span className="settings-nav-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 11l8-4M8 13l8 4"/></svg></span><strong>服务发现</strong><small>远程 FSM 与 Pull 配置</small></button></nav>
+          <nav className="settings-nav" aria-label="设置分类"><span className="settings-nav-label">连接</span><button className="settings-nav-item active" type="button" aria-current="page"><span className="settings-nav-icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 11l8-4M8 13l8 4"/></svg></span><strong>服务发现</strong><small>Client Server 与 Pull 配置</small></button></nav>
           <main className="settings-content">
-            <div className="settings-section-head"><h2>服务发现</h2><p>由 Server 自动发现远程 FSM，并持续拉取实时状态数据。</p></div>
-            <section className="settings-block"><div className="settings-block-head"><div><strong>添加发现源</strong><span>填写注册中心提供的 HTTP 发现接口与同步周期。</span></div><span className="settings-block-badge">HTTP</span></div>
+            <div className="settings-section-head"><h2>服务发现</h2><p>由独立 Server 发现业务进程的可视化 Client Server，并持续拉取其中注册的 FSM。</p></div>
+            <section className="settings-block"><div className="settings-block-head"><div><strong>添加发现源</strong><span>可填写注册中心发现接口，也可直接填写单个 Client Server 地址。</span></div><span className="settings-block-badge">HTTP</span></div>
               <form className="discovery-form" onSubmit={submit}>
                 <div className="discovery-field"><label htmlFor="discoveryId">配置 ID</label><input ref={idRef} id="discoveryId" name="id" required placeholder="production-services" /></div>
                 <div className="discovery-field"><label htmlFor="discoveryName">显示名称</label><input id="discoveryName" name="name" placeholder="Production Services" /></div>
-                <div className="discovery-field wide"><label htmlFor="discoveryEndpoint">发现接口地址</label><input id="discoveryEndpoint" name="endpoint" type="url" required placeholder="http://registry:8080/fsm-services" /></div>
+                <div className="discovery-field wide"><label htmlFor="discoveryEndpoint">发现接口 / Client Server 地址</label><input id="discoveryEndpoint" name="endpoint" type="url" required placeholder="http://service-a:5005" /></div>
                 <div className="discovery-field wide"><label htmlFor="discoveryPathPrefix">目录前缀</label><input id="discoveryPathPrefix" name="pathPrefix" placeholder="production/discovered" /></div>
                 <div className="discovery-field"><label htmlFor="discoveryRefresh">发现周期（秒）</label><input id="discoveryRefresh" name="refreshIntervalSeconds" type="number" min="0.1" step="0.1" defaultValue="30" /></div>
                 <div className="discovery-field"><label htmlFor="discoveryPull">Pull 周期（秒）</label><input id="discoveryPull" name="pullIntervalSeconds" type="number" min="0.1" step="0.1" defaultValue="5" /></div>

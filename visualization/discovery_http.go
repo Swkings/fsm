@@ -61,8 +61,10 @@ func (server *Server) handleDiscoveries(writer http.ResponseWriter, request *htt
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "intervals must not be negative"})
 			return
 		}
-		discovery := &HTTPServiceDiscovery{Endpoint: strings.TrimSpace(input.Endpoint)}
-		registration, err := server.RegisterDiscovery(context.Background(), discovery, DiscoveryConfig{
+		discovery := &HTTPServiceDiscovery{
+			Endpoint: strings.TrimSpace(input.Endpoint), DirectKey: strings.TrimSpace(input.ID),
+		}
+		registration, err := server.RegisterClientServerDiscovery(context.Background(), discovery, DiscoveryConfig{
 			ID: input.ID, Name: input.Name, PathPrefix: input.PathPrefix,
 			RefreshInterval: durationFromSeconds(input.RefreshIntervalSeconds),
 			PullInterval:    durationFromSeconds(input.PullIntervalSeconds),

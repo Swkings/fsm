@@ -17,9 +17,11 @@ func (discover ServiceDiscoveryFunc) Discover(ctx context.Context) ([]Discovered
 	return discover(ctx)
 }
 
+// HTTPServiceDiscovery 自动识别注册中心服务列表接口或单个 Client Server 基础地址。
 type HTTPServiceDiscovery struct {
-	Endpoint string
-	Client   *http.Client
+	Endpoint  string
+	DirectKey string
+	Client    *http.Client
 }
 
 type httpDiscoveryResponse struct {
@@ -28,6 +30,7 @@ type httpDiscoveryResponse struct {
 
 type httpDiscoveredService struct {
 	Key                 string  `json:"key,omitempty"`
+	RegistrationID      string  `json:"registrationId,omitempty"`
 	Endpoint            string  `json:"endpoint"`
 	DisplayName         string  `json:"displayName,omitempty"`
 	Path                string  `json:"path,omitempty"`
@@ -38,7 +41,7 @@ func (discovery *HTTPServiceDiscovery) Discover(ctx context.Context) ([]Discover
 	if discovery == nil {
 		return nil, ErrInvalidDiscovery
 	}
-	endpoint := strings.TrimSpace(discovery.Endpoint)
+	endpoint := strings.TrimRight(strings.TrimSpace(discovery.Endpoint), "/")
 	if err := validateRemoteEndpoint(endpoint); err != nil {
 		return nil, err
 	}
@@ -46,33 +49,58 @@ func (discovery *HTTPServiceDiscovery) Discover(ctx context.Context) ([]Discover
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
+
 	var response httpDiscoveryResponse
-	if err := getRemoteJSON(ctx, client, endpoint, &response); err != nil {
-		return nil, fmt.Errorf("discover services from %s: %w", endpoint, err)
-	}
-	services := make([]DiscoveredService, 0, len(response.Services))
-	for _, item := range response.Services {
-		if item.PullIntervalSeconds < 0 {
-			return nil, fmt.Errorf("%w: negative pull interval for %q", ErrInvalidDiscovery, item.Key)
+	registryErr := getRemoteJSON(ctx, client, endpoint, &response)
+	if registryErr == nil && response.Services != nil {
+		services := make([]DiscoveredService, 0, len(response.Services))
+		for _, item := range response.Services {
+			if item.PullIntervalSeconds < 0 {
+				return nil, fmt.Errorf("%w: negative pull interval for %q", ErrInvalidDiscovery, item.Key)
+			}
+			services = append(services, DiscoveredService{
+				Key: item.Key, RegistrationID: item.RegistrationID,
+				Endpoint: item.Endpoint, DisplayName: item.DisplayName, Path: item.Path,
+				PullInterval: durationFromSeconds(item.PullIntervalSeconds),
+			})
 		}
-		services = append(services, DiscoveredService{
-			Key: item.Key, Endpoint: item.Endpoint, DisplayName: item.DisplayName, Path: item.Path,
-			PullInterval: durationFromSeconds(item.PullIntervalSeconds),
-		})
+		return services, nil
 	}
-	return services, nil
+
+	var targets clientServerTargetsResponse
+	directEndpoint := remoteResourceEndpoint(endpoint, "/api/targets")
+	if directErr := getRemoteJSON(ctx, client, directEndpoint, &targets); directErr == nil {
+		key := strings.TrimSpace(discovery.DirectKey)
+		if key == "" {
+			key = endpoint
+		}
+		return []DiscoveredService{{Key: key, Endpoint: endpoint}}, nil
+	} else {
+		if registryErr == nil {
+			registryErr = errors.New("discovery response does not contain services")
+		}
+		return nil, fmt.Errorf(
+			"discover visualization servers from %s: %w",
+			endpoint,
+			errors.Join(registryErr, fmt.Errorf("probe direct client server: %w", directErr)),
+		)
+	}
 }
 
 type remotePullClient struct {
-	ctx      context.Context
-	endpoint string
-	client   *http.Client
+	ctx            context.Context
+	endpoint       string
+	registrationID string
+	client         *http.Client
 }
 
 func (client *remotePullClient) VisualizationDefinition() Definition {
 	var definition Definition
 	if err := getRemoteJSON(client.ctx, client.client, remoteResourceEndpoint(client.endpoint, "/definition"), &definition); err != nil {
 		panic(err)
+	}
+	if client.registrationID != "" {
+		definition.ID = client.registrationID
 	}
 	return definition
 }

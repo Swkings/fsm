@@ -19,15 +19,25 @@ var (
 )
 
 type DiscoveredService struct {
-	Key          string        `json:"key,omitempty"`
-	Endpoint     string        `json:"endpoint"`
-	DisplayName  string        `json:"displayName,omitempty"`
-	Path         string        `json:"path,omitempty"`
-	PullInterval time.Duration `json:"-"`
+	Key            string        `json:"key,omitempty"`
+	RegistrationID string        `json:"registrationId,omitempty"`
+	Endpoint       string        `json:"endpoint"`
+	DisplayName    string        `json:"displayName,omitempty"`
+	Path           string        `json:"path,omitempty"`
+	PullInterval   time.Duration `json:"-"`
 }
 
+// ServiceDiscovery 发现可直接拉取的单个远程状态机端点。
 type ServiceDiscovery interface {
 	Discover(context.Context) ([]DiscoveredService, error)
+}
+
+// DiscoveredServer 描述注册中心发现的业务进程可视化 Client Server。
+type DiscoveredServer = DiscoveredService
+
+// ServerDiscovery 发现业务进程可视化 Client Server 地址。
+type ServerDiscovery interface {
+	Discover(context.Context) ([]DiscoveredServer, error)
 }
 
 type DiscoveryConfig struct {
@@ -260,6 +270,10 @@ func normalizeDiscoveredService(service DiscoveredService) (DiscoveredService, e
 	if service.Key == "" {
 		service.Key = service.Endpoint
 	}
+	service.RegistrationID = strings.TrimSpace(service.RegistrationID)
+	if strings.ContainsAny(service.RegistrationID, "/\\") {
+		return DiscoveredService{}, fmt.Errorf("%w: invalid registration id %q", ErrInvalidDiscovery, service.RegistrationID)
+	}
 	service.DisplayName = strings.TrimSpace(service.DisplayName)
 	path, err := NormalizePath(service.Path)
 	if err != nil {
@@ -291,12 +305,16 @@ func remoteResourceEndpoint(endpoint, suffix string) string {
 
 func sameDiscoveredService(left, right DiscoveredService) bool {
 	return left.Key == right.Key && left.Endpoint == right.Endpoint &&
+		left.RegistrationID == right.RegistrationID &&
 		left.DisplayName == right.DisplayName && left.Path == right.Path &&
 		left.PullInterval == right.PullInterval
 }
 
 func (registered *registeredDiscovery) registerService(service DiscoveredService) error {
-	client := &remotePullClient{ctx: registered.ctx, endpoint: service.Endpoint, client: &http.Client{Timeout: 10 * time.Second}}
+	client := &remotePullClient{
+		ctx: registered.ctx, endpoint: service.Endpoint,
+		registrationID: service.RegistrationID, client: &http.Client{Timeout: 10 * time.Second},
+	}
 	pullInterval := service.PullInterval
 	if pullInterval == 0 {
 		pullInterval = registered.config.PullInterval
@@ -363,10 +381,14 @@ func (registered *registeredDiscovery) snapshot() DiscoverySnapshot {
 }
 
 func discoveryEndpoint(discovery ServiceDiscovery) string {
-	if source, ok := discovery.(*HTTPServiceDiscovery); ok {
+	switch source := discovery.(type) {
+	case *HTTPServiceDiscovery:
 		return source.Endpoint
+	case *ClientServerDiscovery:
+		return discoveryEndpoint(source.Discovery)
+	default:
+		return ""
 	}
-	return ""
 }
 
 func (server *Server) DiscoverySnapshots() []DiscoverySnapshot {
