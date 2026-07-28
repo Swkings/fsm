@@ -42,15 +42,19 @@ type Symbol struct {
 }
 
 type Transition struct {
-	From  string
-	To    string
-	Event string
+	From      string
+	FromName  string
+	To        string
+	ToName    string
+	Event     string
+	EventName string
 }
 
 type FSM struct {
 	Name        string
 	Describe    string
 	Initial     string
+	InitialName string
 	Transitions []Transition
 }
 
@@ -126,9 +130,12 @@ func ParseFSMData(fsmYaml FSMYaml) (FSMData, error) {
 		}
 		transitionKeys[key] = struct{}{}
 		transitions = append(transitions, Transition{
-			From:  statePrefix + from,
-			Event: eventPrefix + event,
-			To:    statePrefix + to,
+			From:      statePrefix + from,
+			FromName:  from,
+			Event:     eventPrefix + event,
+			EventName: event,
+			To:        statePrefix + to,
+			ToName:    to,
 		})
 	}
 
@@ -142,6 +149,7 @@ func ParseFSMData(fsmYaml FSMYaml) (FSMData, error) {
 			Name:        name,
 			Describe:    meta.Describe,
 			Initial:     statePrefix + initialName,
+			InitialName: initialName,
 			Transitions: transitions,
 		},
 	}, nil
@@ -153,8 +161,12 @@ func prefixedIdentifiers(values []string, prefix string, kind string) ([]Symbol,
 	for _, raw := range values {
 		value := strings.TrimSpace(raw)
 		identifier := prefix + value
-		if value == "" || !token.IsIdentifier(identifier) || token.Lookup(identifier).IsKeyword() {
-			return nil, nil, fmt.Errorf("invalid %s %q", kind, raw)
+		if value == "" || !token.IsIdentifier(value) || token.Lookup(value).IsKeyword() || !token.IsExported(value) {
+			return nil, nil, fmt.Errorf(
+				"invalid %s %q: enum names must be exported Go identifiers",
+				kind,
+				raw,
+			)
 		}
 		if _, exists := seen[value]; exists {
 			return nil, nil, fmt.Errorf("duplicate %s %q", kind, value)

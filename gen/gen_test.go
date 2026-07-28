@@ -57,7 +57,8 @@ FSM:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data.FSM.Name != "Door" || data.FSM.Describe != "Door from YAML" || len(data.FSM.Transitions) != 1 {
+	if data.FSM.Name != "Door" || data.FSM.Describe != "Door from YAML" ||
+		data.FSM.InitialName != "Idle" || len(data.FSM.Transitions) != 1 {
 		t.Fatalf("parsed FSM = %+v", data.FSM)
 	}
 }
@@ -104,6 +105,37 @@ func TestParseFSMDataRejectsDuplicateTransition(t *testing.T) {
 	}
 }
 
+func TestParseFSMDataRejectsUnexportedEnumNames(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*FSMYaml)
+	}{
+		{
+			name: "state",
+			mutate: func(input *FSMYaml) {
+				input.State[0] = "idle"
+			},
+		},
+		{
+			name: "event",
+			mutate: func(input *FSMYaml) {
+				input.Event[0] = "start"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := validFSMYAML()
+			tt.mutate(&input)
+			if _, err := ParseFSMData(input); err == nil ||
+				!strings.Contains(err.Error(), "exported Go identifiers") {
+				t.Fatalf("ParseFSMData() error = %v", err)
+			}
+		})
+	}
+}
+
 func TestGeneratorsProduceStableValidHandlerCode(t *testing.T) {
 	data, err := ParseFSMData(validFSMYAML())
 	if err != nil {
@@ -119,8 +151,14 @@ func TestGeneratorsProduceStableValidHandlerCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(factory), `f.Describe = "Door workflow"`) {
+	factoryText := string(factory)
+	if !strings.Contains(factoryText, `f.Describe = "Door workflow"`) {
 		t.Fatalf("generated factory missing description:\n%s", factory)
+	}
+	if !strings.Contains(factoryText, "types.StateEnum.Idle") ||
+		!strings.Contains(factoryText, "types.EventEnum.Start") ||
+		!strings.Contains(factoryText, "handlers.GetHandler_s_Idle_e_Start()") {
+		t.Fatalf("generated factory uses old handler naming:\n%s", factory)
 	}
 	if err := GenTypes(outputDir, "test.fsm", templateDir, data, true); err != nil {
 		t.Fatal(err)
@@ -130,27 +168,40 @@ func TestGeneratorsProduceStableValidHandlerCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadataText := string(metadata)
-	if !strings.Contains(metadataText, `fsm.FSMState("Idle")`) || !strings.Contains(metadataText, `fsm.FSMEvent("Start")`) {
+	if !strings.Contains(metadataText, "sIdle") ||
+		!strings.Contains(metadataText, `fsm.FSMState("Idle")`) ||
+		!strings.Contains(metadataText, "var StateEnum = stateEnumStruct{") ||
+		!strings.Contains(metadataText, "eStart") ||
+		!strings.Contains(metadataText, `fsm.FSMEvent("Start")`) ||
+		!strings.Contains(metadataText, "var EventEnum = eventEnumStruct{") {
 		t.Fatalf("generated metadata does not preserve YAML values:\n%s", metadata)
 	}
 	if err := GenHandlers(outputDir, "test.fsm", templateDir, data, true); err != nil {
 		t.Fatal(err)
 	}
 
-	handlerPath := filepath.Join(outputDir, data.Package, "handlers", "EventStart_StateIdle.go")
+	handlerPath := filepath.Join(outputDir, data.Package, "handlers", "s_Idle_e_Start.go")
 	handlerCode, err := os.ReadFile(handlerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	handlerText := string(handlerCode)
-	if !strings.Contains(handlerText, "_BeforeHandler_EventStart_StateIdle") || !strings.Contains(handlerText, "_AfterHandler_EventStart_StateIdle") {
+	if !strings.Contains(handlerText, "_Before_s_Idle_e_Start") ||
+		!strings.Contains(handlerText, "_In_s_Idle_e_Start") ||
+		!strings.Contains(handlerText, "_After_s_Idle_e_Start") {
 		t.Fatalf("generated handler does not contain all stages:\n%s", handlerCode)
+	}
+	if got := strings.Count(handlerText, "f *fsm.FSM[types.Payload], _ ...any"); got != 3 {
+		t.Fatalf("generated handler Actor signatures = %d, want 3:\n%s", got, handlerCode)
 	}
 
 	commonPath := filepath.Join(outputDir, data.Package, "handlers", "common.go")
 	firstCommon, err := os.ReadFile(commonPath)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(string(firstCommon), "GetHandler_s_Idle_e_Start") {
+		t.Fatalf("generated common handler uses old naming:\n%s", firstCommon)
 	}
 	if strings.Contains(string(firstCommon), "switch f.Name") || strings.Contains(string(firstCommon), "FSMName") || strings.Contains(handlerText, "ForDoor") {
 		t.Fatalf("generated handlers still contain multi-FSM dispatch:\n%s\n%s", firstCommon, handlerCode)

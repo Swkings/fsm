@@ -10,12 +10,12 @@ import (
 )
 
 func NewFSM{{.FSMData.FSM.Name}}() *fsm.FSM[types.Payload] {
-	f := fsm.NewFSM[types.Payload](types.FSMName{{.FSMData.FSM.Name}}, types.{{.FSMData.FSM.Initial}})
+	f := fsm.NewFSM[types.Payload](types.FSMName{{.FSMData.FSM.Name}}, types.StateEnum.{{.FSMData.FSM.InitialName}})
 	f.Describe = {{printf "%q" .FSMData.FSM.Describe}}
 
 	f.SetTransitions(
 		{{- range .FSMData.FSM.Transitions}}
-		fsm.NewTransitionItem(types.{{.Event}}, types.{{.From}}, types.{{.To}}, handlers.GetHandler_{{.Event}}_{{.From}}()),
+		fsm.NewTransitionItem(types.EventEnum.{{.EventName}}, types.StateEnum.{{.FromName}}, types.StateEnum.{{.ToName}}, handlers.GetHandler_s_{{.FromName}}_e_{{.EventName}}()),
 		{{- end}}
 	)
 

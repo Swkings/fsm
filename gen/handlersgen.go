@@ -58,5 +58,5 @@ func collectHandlerData(data FSMData) []*HandlerData {
 }
 
 func handlerFileName(transition Transition) string {
-	return transition.Event + "_" + transition.From + ".go"
+	return "s_" + transition.FromName + "_e_" + transition.EventName + ".go"
 }

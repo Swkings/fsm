@@ -5,19 +5,19 @@ import (
 	"{{.PackageDir}}/{{.Package}}/types"
 )
 
-func _BeforeHandler_{{.Transition.Event}}_{{.Transition.From}}(f *fsm.FSM[types.Payload]) error {
+func _Before_s_{{.Transition.FromName}}_e_{{.Transition.EventName}}(f *fsm.FSM[types.Payload], _ ...any) error {
 	// TODO: your code
 
 	return nil
 }
 
-func _Handler_{{.Transition.Event}}_{{.Transition.From}}(f *fsm.FSM[types.Payload]) error {
+func _In_s_{{.Transition.FromName}}_e_{{.Transition.EventName}}(f *fsm.FSM[types.Payload], _ ...any) error {
 	// TODO: your code
 
 	return nil
 }
 
-func _AfterHandler_{{.Transition.Event}}_{{.Transition.From}}(f *fsm.FSM[types.Payload]) error {
+func _After_s_{{.Transition.FromName}}_e_{{.Transition.EventName}}(f *fsm.FSM[types.Payload], _ ...any) error {
 	// TODO: your code
 
 	return nil

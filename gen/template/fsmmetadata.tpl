@@ -9,12 +9,36 @@ var FSMName{{.FSMData.FSM.Name}} = fsm.FSMName("{{.FSMData.FSM.Name}}")
 
 var (
     {{- range .FSMData.States}}
-    {{.Identifier}} = fsm.FSMState("{{.Value}}")
+    s{{.Value}} = fsm.FSMState("{{.Value}}")
     {{- end}}
 )
 
+type stateEnumStruct struct {
+    {{- range .FSMData.States}}
+    {{.Value}} fsm.FSMState
+    {{- end}}
+}
+
+var StateEnum = stateEnumStruct{
+    {{- range .FSMData.States}}
+    {{.Value}}: s{{.Value}},
+    {{- end}}
+}
+
 var (
     {{- range .FSMData.Events}}
-    {{.Identifier}} = fsm.FSMEvent("{{.Value}}")
+    e{{.Value}} = fsm.FSMEvent("{{.Value}}")
     {{- end}}
 )
+
+type eventEnumStruct struct {
+    {{- range .FSMData.Events}}
+    {{.Value}} fsm.FSMEvent
+    {{- end}}
+}
+
+var EventEnum = eventEnumStruct{
+    {{- range .FSMData.Events}}
+    {{.Value}}: e{{.Value}},
+    {{- end}}
+}
