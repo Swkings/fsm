@@ -46,7 +46,7 @@ FSM:
     - Open -> Lock -> Close
 ```
 
-生成器会校验状态、事件、初始状态、转移格式、重复转移及 Go 标识符，并在输入无效时返回明确错误。每条转移生成独立 Handler 文件，Handler 直接绑定到当前 FSM，不再生成跨 FSM 的名称判断或共享分发层。
+生成器会校验状态、事件、初始状态、转移格式、重复转移及 Go 标识符，并在输入无效时返回明确错误。状态和事件通过 `types.StateEnum.STATE`、`types.EventEnum.EVENT` 枚举访问。每条转移生成独立 Handler 文件，文件名为 `s_STATE_e_EVENT.go`，三阶段方法名分别为 `_Before_s_STATE_e_EVENT`、`_In_s_STATE_e_EVENT`、`_After_s_STATE_e_EVENT`。Handler 直接绑定到当前 FSM，不再生成跨 FSM 的名称判断或共享分发层。
 
 ## Handler 执行语义
 
@@ -57,6 +57,22 @@ FSM:
 3. `AfterHandler`：保存派生数据或清理临时数据。
 
 任一阶段返回错误都会终止转移，目标状态不会提交，错误会同时写入 `TransitionTrace`。Payload 内部业务数据不会自动回滚，需要 Handler 自行保证事务或补偿。
+
+事件参数可通过 `ProcessEvent(event, params...)` 或 `ProcessEventContext(ctx, event, params...)` 传入。`BeforeHandler`、`Handler` 和 `AfterHandler` 统一使用 `Actor[T]` 签名：`func(*FSM[T], ...any) error`。不使用参数时可将其命名为 `_ ...any`：
+
+```go
+handler := fsm.Handler[Payload]{
+    Handler: func(machine *fsm.FSM[Payload], params ...any) error {
+        attack := params[0].(AttackParams)
+        machine.Payload.TargetHealth -= attack.Damage
+        return nil
+    },
+}
+machine.SetTransitions(
+    fsm.NewTransitionItem(EventAttack, StateIdle, StateAttacking, handler),
+)
+_, err := machine.ProcessEvent(EventAttack, AttackParams{Damage: 25})
+```
 
 同一 FSM 不允许重入处理事件：Handler 内再次调用 `ProcessEvent`，或其他 goroutine 在事件尚未结束时调用，会立即得到 `ErrorEventProcessing`，不会阻塞死锁。Handler 执行期间若通过 `SetCurrentState` 改变状态，原转移会返回 `ErrorStateChanged`，避免覆盖外部状态修改。
 

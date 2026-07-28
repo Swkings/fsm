@@ -107,7 +107,7 @@ type (
 	}
 
 	// Actor 是 Handler 各执行阶段的函数类型，可通过 FSM 访问状态机和业务载荷。
-	Actor[T PayloadT] func(*FSM[T]) error
+	Actor[T PayloadT] func(*FSM[T], ...any) error
 
 	// Handler 定义一次状态转移的三阶段处理流程。
 	// 执行顺序固定为 BeforeHandler、Handler、AfterHandler；nil 阶段会被直接跳过。
@@ -328,13 +328,13 @@ func (fsm *FSM[T]) visualizationSnapshot() (map[EventStateKey]FSMState, FSMState
 //  4. 全部处理成功后提交目标状态并生成新的转移追踪标识。
 //
 // 规则不存在或 Handler 返回错误时会返回失败追踪，当前状态及追踪标识保持不变。
-func (fsm *FSM[T]) ProcessEvent(event FSMEvent) (TransitionTrace, error) {
-	return fsm.ProcessEventContext(context.Background(), event)
+func (fsm *FSM[T]) ProcessEvent(event FSMEvent, params ...any) (TransitionTrace, error) {
+	return fsm.ProcessEventWithContext(context.Background(), event, params...)
 }
 
-// ProcessEventContext 直接处理事件，并允许 context 在 Handler 阶段之间取消转移。
+// ProcessEventWithContext 直接处理事件，并允许 context 在 Handler 阶段之间取消转移。
 // 直接调用拥有最高调度优先级；若另一个事件已经开始执行，则立即返回 ErrorEventProcessing。
-func (fsm *FSM[T]) ProcessEventContext(ctx context.Context, event FSMEvent) (TransitionTrace, error) {
+func (fsm *FSM[T]) ProcessEventWithContext(ctx context.Context, event FSMEvent, params ...any) (TransitionTrace, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -353,18 +353,18 @@ func (fsm *FSM[T]) ProcessEventContext(ctx context.Context, event FSMEvent) (Tra
 	}
 	defer fsm.releaseEventExecution()
 
-	return fsm.processEventLocked(ctx, event)
+	return fsm.processEventLocked(ctx, event, params...)
 }
 
 // processEventLocked 在调用方已经取得事件执行权后完成转移。
-func (fsm *FSM[T]) processEventLocked(ctx context.Context, event FSMEvent) (TransitionTrace, error) {
-	trace, err := fsm.processEventLockedCore(ctx, event)
+func (fsm *FSM[T]) processEventLocked(ctx context.Context, event FSMEvent, params ...any) (TransitionTrace, error) {
+	trace, err := fsm.processEventLockedCore(ctx, event, params...)
 	fsm.notifyRuntimeObservers(&trace)
 	return trace, err
 }
 
 // processEventLockedCore 执行实际转移；调用方通过 processEventLocked 统一发布运行时通知。
-func (fsm *FSM[T]) processEventLockedCore(ctx context.Context, event FSMEvent) (TransitionTrace, error) {
+func (fsm *FSM[T]) processEventLockedCore(ctx context.Context, event FSMEvent, params ...any) (TransitionTrace, error) {
 	if err := ctx.Err(); err != nil {
 		return fsm.rejectedEventTrace(event, err), err
 	}
@@ -386,7 +386,7 @@ func (fsm *FSM[T]) processEventLockedCore(ctx context.Context, event FSMEvent) (
 	}
 	trace.SetToState(toState)
 
-	if err := handler.apply(ctx, fsm); err != nil {
+	if err := handler.apply(ctx, fsm, params...); err != nil {
 		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail().End(err)
 		return trace.TrimPtr(), err
 	}
@@ -465,7 +465,7 @@ func (fsm *FSM[T]) commitTransition(
 
 // apply 按固定顺序执行 Handler 的三个阶段。
 // 任一阶段返回错误都会立即终止处理并向上传递，目标状态不会提交。
-func (h Handler[T]) apply(ctx context.Context, fsm *FSM[T]) error {
+func (h Handler[T]) apply(ctx context.Context, fsm *FSM[T], params ...any) error {
 	stages := []Actor[T]{h.BeforeHandler, h.Handler, h.AfterHandler}
 	for _, stage := range stages {
 		if err := ctx.Err(); err != nil {
@@ -474,7 +474,7 @@ func (h Handler[T]) apply(ctx context.Context, fsm *FSM[T]) error {
 		if stage == nil {
 			continue
 		}
-		if err := stage(fsm); err != nil {
+		if err := stage(fsm, params...); err != nil {
 			return err
 		}
 	}
