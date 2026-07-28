@@ -1,0 +1,18 @@
+package handlers
+
+import (
+	"github.com/swkings/fsm"
+	"github.com/swkings/fsm/examples/generated/player/types"
+)
+
+func _Before_s_IN_AIR_e_LAND(f *fsm.FSM[types.Payload], _ ...any) error {
+	return nil
+}
+
+func _In_s_IN_AIR_e_LAND(f *fsm.FSM[types.Payload], _ ...any) error {
+	return handleTransition(f, types.EventEnum.LAND)
+}
+
+func _After_s_IN_AIR_e_LAND(f *fsm.FSM[types.Payload], _ ...any) error {
+	return nil
+}

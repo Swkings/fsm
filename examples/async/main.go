@@ -11,13 +11,13 @@ import (
 )
 
 type payload struct {
-	mu    sync.Mutex
+	mu    *sync.Mutex
 	order []string
 }
 
-func (p payload) JSON() ([]byte, error) {
-	return json.Marshal(p.order)
-}
+func (p payload) JSON() ([]byte, error) { return json.Marshal(p.order) }
+func (p payload) DisplayName() string   { return "" }
+func (p payload) Category() string      { return "" }
 
 func (p *payload) append(event string) {
 	p.mu.Lock()
@@ -32,7 +32,9 @@ func (p *payload) snapshot() []string {
 }
 
 func main() {
-	data := &payload{}
+	data := &payload{
+		mu: &sync.Mutex{},
+	}
 	machine := fsm.NewFSM[payload]("async-demo", "idle", data)
 	defer machine.Close()
 
@@ -40,7 +42,7 @@ func main() {
 	releaseBlock := make(chan struct{})
 	fireDone := make(chan struct{})
 	machine.SetTransitions(
-		fsm.NewTransitionItem("direct", "idle", "idle", fsm.Handler[payload]{Handler: func(machine *fsm.FSM[payload]) error {
+		fsm.NewTransitionItem("direct", "idle", "idle", fsm.Handler[payload]{Handler: func(machine *fsm.FSM[payload], _ ...any) error {
 			close(blockStarted)
 			<-releaseBlock
 			machine.Payload.append("direct")
@@ -49,7 +51,7 @@ func main() {
 		fsm.NewTransitionItem("high", "idle", "idle", eventHandler("high")),
 		fsm.NewTransitionItem("low", "idle", "idle", eventHandler("low")),
 		fsm.NewTransitionItem("cancel", "idle", "idle", eventHandler("cancel")),
-		fsm.NewTransitionItem("fire", "idle", "idle", fsm.Handler[payload]{Handler: func(*fsm.FSM[payload]) error {
+		fsm.NewTransitionItem("fire", "idle", "idle", fsm.Handler[payload]{Handler: func(_ *fsm.FSM[payload], _ ...any) error {
 			close(fireDone)
 			return nil
 		}}),
@@ -105,7 +107,7 @@ func main() {
 }
 
 func eventHandler(name string) fsm.Handler[payload] {
-	return fsm.Handler[payload]{Handler: func(machine *fsm.FSM[payload]) error {
+	return fsm.Handler[payload]{Handler: func(machine *fsm.FSM[payload], _ ...any) error {
 		if err := machine.GetEventContext().Err(); err != nil {
 			return err
 		}

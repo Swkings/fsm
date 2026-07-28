@@ -1,0 +1,4 @@
+Visualization:
+  ServerAddress: 127.0.0.1:5005
+  TraceLimit: 50
+  PathPrefix: examples/generated

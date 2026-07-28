@@ -14,9 +14,9 @@ type doorPayload struct {
 	Stages     []string
 }
 
-func (p doorPayload) JSON() ([]byte, error) {
-	return json.Marshal(p)
-}
+func (p doorPayload) JSON() ([]byte, error) { return json.Marshal(p) }
+func (p doorPayload) DisplayName() string   { return p.Name }
+func (p doorPayload) Category() string      { return "" }
 
 func main() {
 	payload := &doorPayload{Name: "仓库门", Authorized: true}
@@ -28,19 +28,19 @@ func main() {
 		fsm.FSMState("closed"),
 		fsm.FSMState("opened"),
 		fsm.Handler[doorPayload]{
-			BeforeHandler: func(machine *fsm.FSM[doorPayload]) error {
+			BeforeHandler: func(machine *fsm.FSM[doorPayload], _ ...any) error {
 				machine.Payload.Stages = append(machine.Payload.Stages, "before")
 				if !machine.Payload.Authorized {
 					return errors.New("没有开门权限")
 				}
 				return nil
 			},
-			Handler: func(machine *fsm.FSM[doorPayload]) error {
+			Handler: func(machine *fsm.FSM[doorPayload], _ ...any) error {
 				machine.Payload.Stages = append(machine.Payload.Stages, "handler")
 				fmt.Printf("正在打开%s\n", machine.Payload.Name)
 				return nil
 			},
-			AfterHandler: func(machine *fsm.FSM[doorPayload]) error {
+			AfterHandler: func(machine *fsm.FSM[doorPayload], _ ...any) error {
 				machine.Payload.Stages = append(machine.Payload.Stages, "after")
 				return nil
 			},

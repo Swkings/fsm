@@ -7,58 +7,59 @@ import (
 	"net"
 	"net/http"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
+	"github.com/swkings/fsm"
 	"github.com/swkings/fsm/visualization"
 )
 
-type remoteWorker struct {
-	mu       sync.RWMutex
-	state    string
-	progress int
+type workerPayload struct {
+	Progress int `json:"progress"`
 }
 
-func (worker *remoteWorker) VisualizationDefinition() visualization.Definition {
-	return visualization.Definition{
-		ID: "remote-worker", Name: "worker", Description: "discovered remote FSM",
-		States: []string{"idle", "running", "done"}, Events: []string{"start", "finish"},
-		Transitions: []visualization.TransitionSnapshot{
-			{FromState: "idle", Event: "start", ToState: "running"},
-			{FromState: "running", Event: "finish", ToState: "done"},
-		},
-	}
-}
-
-func (worker *remoteWorker) VisualizationSnapshot(context.Context) (visualization.RealtimeData, error) {
-	worker.mu.RLock()
-	defer worker.mu.RUnlock()
-	payload, _ := json.Marshal(map[string]int{"progress": worker.progress})
-	return visualization.RealtimeData{CurrentState: worker.state, Payload: payload, UpdatedAt: time.Now()}, nil
-}
+func (payload workerPayload) JSON() ([]byte, error) { return json.Marshal(payload) }
+func (payload workerPayload) DisplayName() string   { return "Discovered Worker" }
+func (payload workerPayload) Category() string      { return "workers" }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	worker := &remoteWorker{state: "idle"}
-	discoveryURL, closeRemote, err := serveRemoteClient(worker)
+	clientServer := visualization.NewServer(visualization.VisualizationConfig{
+		ServerAddress: "127.0.0.1:5009",
+		TraceLimit:    50,
+	})
+	if err := clientServer.Start(); err != nil {
+		panic(err)
+	}
+	defer visualization.ShutdownClientServer(context.Background())
+
+	worker := newWorkerFSM()
+	defer worker.Close()
+	registration, err := visualization.RegisterClient(ctx, worker)
 	if err != nil {
 		panic(err)
 	}
-	defer closeRemote()
+	defer registration.Unregister()
 
-	server := visualization.NewServer()
-	if err := server.Start(); err != nil {
+	registryURL, closeRegistry, err := serveRegistry(clientServer.URL())
+	if err != nil {
 		panic(err)
 	}
-	defer server.Close(context.Background())
+	defer closeRegistry()
 
-	discovery, err := server.RegisterDiscovery(ctx, &visualization.HTTPServiceDiscovery{
-		Endpoint: discoveryURL,
+	aggregate := visualization.NewServerWithConfig(visualization.ServerConfig{
+		Address: "127.0.0.1:5005",
+	})
+	if err := aggregate.Start(); err != nil {
+		panic(err)
+	}
+	defer aggregate.Close(context.Background())
+	discovery, err := aggregate.RegisterClientServerDiscovery(ctx, &visualization.HTTPServiceDiscovery{
+		Endpoint: registryURL,
 	}, visualization.DiscoveryConfig{
-		ID: "local-services", Name: "Local Services", PathPrefix: "examples/discovered",
+		ID: "local-clients", Name: "Local Clients", PathPrefix: "examples/discovered",
 		RefreshInterval: 2 * time.Second, PullInterval: 500 * time.Millisecond,
 	})
 	if err != nil {
@@ -66,55 +67,65 @@ func main() {
 	}
 	defer discovery.Unregister()
 
-	fmt.Printf("FSM visualization server: %s\n", server.URL())
-	fmt.Printf("service discovery endpoint: %s\n", discoveryURL)
+	fmt.Printf("client visualization server: %s\n", clientServer.URL())
+	fmt.Printf("aggregate visualization server: %s\n", aggregate.URL())
+	fmt.Printf("client server registry: %s\n", registryURL)
 	fmt.Println("Press Ctrl+C to stop")
-	go updateWorker(ctx, worker)
+	go generateEvents(ctx, worker)
 	<-ctx.Done()
 }
 
-func serveRemoteClient(worker *remoteWorker) (string, func(), error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:5009")
+func newWorkerFSM() *fsm.FSM[workerPayload] {
+	worker := fsm.NewFSM("worker", fsm.FSMState("idle"), &workerPayload{})
+	worker.SetTransitions(
+		fsm.NewTransitionItem("start", "idle", "running", fsm.Handler[workerPayload]{
+			Handler: func(machine *fsm.FSM[workerPayload], _ ...any) error {
+				machine.Payload.Progress = 50
+				return nil
+			},
+		}),
+		fsm.NewTransitionItem("finish", "running", "done", fsm.Handler[workerPayload]{
+			Handler: func(machine *fsm.FSM[workerPayload], _ ...any) error {
+				machine.Payload.Progress = 100
+				return nil
+			},
+		}),
+	)
+	return worker
+}
+
+func serveRegistry(clientServerURL string) (string, func(), error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:5010")
 	if err != nil {
 		return "", nil, err
 	}
-	baseURL := "http://" + listener.Addr().String()
 	mux := http.NewServeMux()
-	mux.Handle("/fsm/worker/", http.StripPrefix("/fsm/worker", visualization.NewClientHandler(worker)))
-	mux.HandleFunc("/services", func(writer http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("/visualization-servers", func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(map[string]any{
 			"services": []map[string]any{{
-				"key": "worker-1", "endpoint": baseURL + "/fsm/worker",
-				"displayName": "Discovered Worker", "path": "workers",
+				"key": "local-client", "endpoint": clientServerURL, "path": "client-a",
 			}},
 		})
 	})
-	httpServer := &http.Server{Handler: mux}
+	httpServer := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = httpServer.Serve(listener) }()
 	closeServer := func() {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownContext)
 	}
-	return baseURL + "/services", closeServer, nil
+	return "http://" + listener.Addr().String() + "/visualization-servers", closeServer, nil
 }
 
-func updateWorker(ctx context.Context, worker *remoteWorker) {
+func generateEvents(ctx context.Context, worker *fsm.FSM[workerPayload]) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	for {
+	events := []fsm.FSMEvent{"start", "finish"}
+	for index := 0; index < len(events); index++ {
 		select {
 		case <-ticker.C:
-			worker.mu.Lock()
-			worker.progress++
-			switch worker.progress {
-			case 1:
-				worker.state = "running"
-			case 5:
-				worker.state = "done"
-			}
-			worker.mu.Unlock()
+			_, _ = worker.ProcessEvent(events[index])
 		case <-ctx.Done():
 			return
 		}

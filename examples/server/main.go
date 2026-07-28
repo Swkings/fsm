@@ -18,9 +18,9 @@ type doorPayload struct {
 	OpenCount int    `json:"openCount"`
 }
 
-func (p doorPayload) JSON() ([]byte, error) {
-	return json.Marshal(p)
-}
+func (p doorPayload) JSON() ([]byte, error) { return json.Marshal(p) }
+func (p doorPayload) DisplayName() string   { return "Warehouse Door" }
+func (p doorPayload) Category() string      { return "warehouse/doors" }
 
 // externalWorker 不依赖 fsm.FSM，只需直接实现 visualization.Client。
 type externalWorker struct {
@@ -51,42 +51,42 @@ func (worker *externalWorker) VisualizationSnapshot(context.Context) (visualizat
 	return visualization.RealtimeData{CurrentState: worker.state}, nil
 }
 
+func (worker *externalWorker) VisualizationRegistrationConfig() visualization.RegistrationConfig {
+	return visualization.RegistrationConfig{
+		DisplayName: "Third-party Worker", Path: "workers/external",
+		Mode: visualization.ModePull, PullInterval: time.Second,
+	}
+}
+
 func main() {
-	server := visualization.NewServerWithConfig(visualization.ServerConfig{
-		Address:    "0.0.0.0:5005",
-		TraceLimit: 50,
+	server := visualization.NewServer(visualization.VisualizationConfig{
+		ServerAddress: "0.0.0.0:5005",
+		TraceLimit:    50,
+		PathPrefix:    "production",
 	})
 	if err := server.Start(); err != nil {
 		panic(err)
 	}
-	defer server.Close(context.Background())
+	defer visualization.ShutdownClientServer(context.Background())
 
 	doorData := &doorPayload{Location: "warehouse"}
 	door := fsm.NewFSM[doorPayload]("door", "closed", doorData)
 	defer door.Close()
 	door.SetTransitions(
-		fsm.NewTransitionItem("open", "closed", "opened", fsm.Handler[doorPayload]{Handler: func(machine *fsm.FSM[doorPayload]) error {
+		fsm.NewTransitionItem("open", "closed", "opened", fsm.Handler[doorPayload]{Handler: func(machine *fsm.FSM[doorPayload], _ ...any) error {
 			machine.Payload.OpenCount++
 			return nil
 		}}),
 		fsm.NewTransitionItem[doorPayload]("close", "opened", "closed", fsm.Handler[doorPayload]{}),
 	)
-	doorRegistration, err := server.Register(context.Background(), door, visualization.RegistrationConfig{
-		DisplayName: "Warehouse Door",
-		Path:        "production/warehouse/doors",
-	})
+	doorRegistration, err := visualization.RegisterClient(context.Background(), door)
 	if err != nil {
 		panic(err)
 	}
 	defer doorRegistration.Unregister()
 
 	worker := &externalWorker{state: "idle"}
-	workerRegistration, err := server.Register(context.Background(), worker, visualization.RegistrationConfig{
-		DisplayName:  "Third-party Worker",
-		Path:         "production/workers/external",
-		Mode:         visualization.ModePull,
-		PullInterval: time.Second,
-	})
+	workerRegistration, err := visualization.RegisterClient(context.Background(), worker)
 	if err != nil {
 		panic(err)
 	}

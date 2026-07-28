@@ -1,0 +1,67 @@
+PackageDir: github.com/swkings/fsm/examples/generated
+FSMEnginePackage: github.com/swkings
+Package: player
+State:
+  - IDLE         # 站立闲置
+  - WALK         # 行走
+  - RUN          # 奔跑
+  - JUMP_START   # 起跳准备
+  - IN_AIR       # 空中滞留
+  - ATTACK_LIGHT # 轻攻击
+  - ATTACK_HEAVY # 重攻击
+  - HURT         # 受击硬直
+  - DIE          # 死亡
+Event:
+  - MOVE      # 输入移动
+  - RUN       # 输入奔跑
+  - STOP      # 停止输入
+  - JUMP      # 按下跳跃
+  - HIT_LIGHT # 按下轻击
+  - HIT_HEAVY # 按下重击
+  - ANIM_END  # 动画结束/后摇结束
+  - LAND      # 着地
+  - DAMAGE    # 受到伤害
+  - DEAD      # 生命值归零
+  - REVIVE    # 复活
+FSM:
+  Name: PlayerAction
+  Describe: 玩家移动、跳跃、战斗、受击、死亡与复活状态机
+  Initial: IDLE
+  Transition:
+    # 移动与空间分支
+    - IDLE -> MOVE -> WALK
+    - IDLE -> RUN -> RUN
+    - WALK -> RUN -> RUN
+    - WALK -> STOP -> IDLE
+    - RUN -> STOP -> IDLE
+    - RUN -> MOVE -> WALK
+    - IDLE -> JUMP -> JUMP_START
+    - WALK -> JUMP -> JUMP_START
+    - RUN -> JUMP -> JUMP_START
+    - JUMP_START -> ANIM_END -> IN_AIR
+    - IN_AIR -> LAND -> IDLE
+
+    # 战斗攻击分支
+    - IDLE -> HIT_LIGHT -> ATTACK_LIGHT
+    - WALK -> HIT_LIGHT -> ATTACK_LIGHT
+    - IDLE -> HIT_HEAVY -> ATTACK_HEAVY
+    - WALK -> HIT_HEAVY -> ATTACK_HEAVY
+    - ATTACK_LIGHT -> ANIM_END -> IDLE
+    - ATTACK_HEAVY -> ANIM_END -> IDLE
+
+    # 受击与死亡
+    - IDLE -> DAMAGE -> HURT
+    - WALK -> DAMAGE -> HURT
+    - RUN -> DAMAGE -> HURT
+    - IN_AIR -> DAMAGE -> HURT
+    - ATTACK_LIGHT -> DAMAGE -> HURT
+    - ATTACK_HEAVY -> DAMAGE -> HURT
+    - HURT -> ANIM_END -> IDLE
+    - IDLE -> DEAD -> DIE
+    - WALK -> DEAD -> DIE
+    - RUN -> DEAD -> DIE
+    - IN_AIR -> DEAD -> DIE
+    - HURT -> DEAD -> DIE
+    - ATTACK_LIGHT -> DEAD -> DIE
+    - ATTACK_HEAVY -> DEAD -> DIE
+    - DIE -> REVIVE -> IDLE
