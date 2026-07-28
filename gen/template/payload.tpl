@@ -15,7 +15,7 @@ func (p Payload) DisplayName() string {
 	return "DisplayName"
 }
 
-func (p Payload) Path() string {
-	// TODO: your Path
-	return "fsm/path"
+func (p Payload) Category() string {
+	// TODO: your category
+	return "fsm/category"
 }
