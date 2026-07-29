@@ -4,7 +4,7 @@
 
 ## 基础状态转移
 
-演示泛型 Payload、`BeforeHandler`、`Handler`、`AfterHandler` 以及 `TransitionTrace`：
+演示创建 FSM 时传入 `&Payload{}`，并在 `BeforeHandler`、`Handler`、`AfterHandler` 中共享修改同一份 Payload，以及查看 `TransitionTrace`：
 
 ```bash
 go run ./examples/basic
@@ -12,7 +12,7 @@ go run ./examples/basic
 
 ## YAML 自动生成角色 FSM
 
-[`generated/player.fsm`](./generated/player.fsm) 定义了玩家的移动、跳跃、轻重攻击、受击、死亡和复活状态。`generated/player` 下的工厂、元数据及 32 条转移 Handler 均由该 YAML 生成；状态和事件分别通过 `types.StateEnum`、`types.EventEnum` 访问。Handler 文件采用 `s_STATE_e_EVENT.go` 命名，内部使用 `_Before`、`_In`、`_After` 三阶段方法。轻重攻击通过 `ProcessEvent` 携带 `AttackParams` 并扣除指定目标血量，角色死亡后可通过 `REVIVE` 回到 `IDLE`。
+[`generated/player.fsm`](./generated/player.fsm) 定义了玩家的移动、跳跃、轻重攻击、受击、死亡和复活状态。`generated/player` 下的工厂、元数据及 32 条转移 Handler 均由该 YAML 生成；生成工厂接收 `*types.Payload`，调用方通过 `NewFSMPlayerAction(&types.Payload{...})` 创建状态机。状态和事件分别通过 `types.StateEnum`、`types.EventEnum` 访问。Handler 文件采用 `s_STATE_e_EVENT.go` 命名，内部使用 `_Before`、`_In`、`_After` 三阶段方法。轻重攻击通过 `ProcessEvent` 携带 `AttackParams` 并扣除指定目标血量，角色死亡后可通过 `REVIVE` 回到 `IDLE`。
 
 运行示例：
 

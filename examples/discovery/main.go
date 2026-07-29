@@ -18,9 +18,9 @@ type workerPayload struct {
 	Progress int `json:"progress"`
 }
 
-func (payload workerPayload) JSON() ([]byte, error) { return json.Marshal(payload) }
-func (payload workerPayload) DisplayName() string   { return "Discovered Worker" }
-func (payload workerPayload) Category() string      { return "workers" }
+func (payload *workerPayload) JSON() ([]byte, error) { return json.Marshal(payload) }
+func (payload *workerPayload) DisplayName() string   { return "Discovered Worker" }
+func (payload *workerPayload) Category() string      { return "workers" }
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -75,17 +75,17 @@ func main() {
 	<-ctx.Done()
 }
 
-func newWorkerFSM() *fsm.FSM[workerPayload] {
+func newWorkerFSM() *fsm.FSM[*workerPayload] {
 	worker := fsm.NewFSM("worker", fsm.FSMState("idle"), &workerPayload{})
 	worker.SetTransitions(
-		fsm.NewTransitionItem("start", "idle", "running", fsm.Handler[workerPayload]{
-			Handler: func(machine *fsm.FSM[workerPayload], _ ...any) error {
+		fsm.NewTransitionItem("start", "idle", "running", fsm.Handler[*workerPayload]{
+			Handler: func(machine *fsm.FSM[*workerPayload], _ ...any) error {
 				machine.Payload.Progress = 50
 				return nil
 			},
 		}),
-		fsm.NewTransitionItem("finish", "running", "done", fsm.Handler[workerPayload]{
-			Handler: func(machine *fsm.FSM[workerPayload], _ ...any) error {
+		fsm.NewTransitionItem("finish", "running", "done", fsm.Handler[*workerPayload]{
+			Handler: func(machine *fsm.FSM[*workerPayload], _ ...any) error {
 				machine.Payload.Progress = 100
 				return nil
 			},
@@ -118,7 +118,7 @@ func serveRegistry(clientServerURL string) (string, func(), error) {
 	return "http://" + listener.Addr().String() + "/visualization-servers", closeServer, nil
 }
 
-func generateEvents(ctx context.Context, worker *fsm.FSM[workerPayload]) {
+func generateEvents(ctx context.Context, worker *fsm.FSM[*workerPayload]) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	events := []fsm.FSMEvent{"start", "finish"}

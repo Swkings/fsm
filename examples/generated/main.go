@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/swkings/fsm"
+	"github.com/swkings/fsm/config"
 	"github.com/swkings/fsm/examples/generated/player"
 	"github.com/swkings/fsm/examples/generated/player/types"
+	"github.com/swkings/fsm/store"
 	"github.com/swkings/fsm/visualization"
 	"github.com/zeromicro/go-zero/core/conf"
 )
@@ -22,9 +24,7 @@ const (
 	maxEventInterval = 5 * time.Second
 )
 
-type exampleConfig struct {
-	Visualization visualization.VisualizationConfig
-}
+type exampleConfig = config.Config
 
 func main() {
 	configPath := flag.String("config", "examples/generated/config.yaml", "generated example config file")
@@ -42,7 +42,15 @@ func run(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
+	fsmStore, err := store.New(config.Store)
+	if err != nil {
+		return fmt.Errorf("create fsm store: %w", err)
+	}
+	defer fsmStore.Close()
 	clientServer := visualization.NewServer(config.Visualization)
+	if err = clientServer.RegisterReplayStore("primary", "Generated Player Store", fsmStore); err != nil {
+		return fmt.Errorf("register replay store: %w", err)
+	}
 	if err := clientServer.Start(); err != nil {
 		_ = visualization.ShutdownClientServer(context.Background())
 		return fmt.Errorf("start visualization client server: %w", err)
@@ -55,8 +63,17 @@ func run(ctx context.Context, configPath string) error {
 		TargetHealth: 200,
 		Stamina:      100,
 	}
-	machine := player.NewFSMPlayerAction().SetPayload(payload)
+	machine := player.NewFSMPlayerAction(payload)
 	defer machine.Close()
+	if config.FSM.Name != "" && config.FSM.Name != machine.Name.String() {
+		return fmt.Errorf("configured fsm name %q does not match generated name %q", config.FSM.Name, machine.Name)
+	}
+	if config.FSM.InitialState != "" && config.FSM.InitialState != machine.GetCurrentState().String() {
+		return fmt.Errorf("configured initial state %q does not match generated state %q", config.FSM.InitialState, machine.GetCurrentState())
+	}
+	if err = machine.BindStore(ctx, fsmStore, config.FSM.StoreKey); err != nil {
+		return fmt.Errorf("restore generated player: %w", err)
+	}
 	registration, err := visualization.RegisterClient(ctx, machine)
 	if err != nil {
 		return fmt.Errorf("register generated player visualization: %w", err)
@@ -82,7 +99,7 @@ func loadExampleConfig(path string) (exampleConfig, error) {
 	return config, nil
 }
 
-func runRandomEvents(ctx context.Context, machine *fsm.FSM[types.Payload]) error {
+func runRandomEvents(ctx context.Context, machine *fsm.FSM[*types.Payload]) error {
 	for {
 		events := machine.GetEventUnderState(machine.GetCurrentState())
 		if len(events) == 0 {
@@ -127,7 +144,7 @@ func randomEventParams(event fsm.FSMEvent) []any {
 	}
 }
 
-func process(machine *fsm.FSM[types.Payload], event fsm.FSMEvent, params ...any) error {
+func process(machine *fsm.FSM[*types.Payload], event fsm.FSMEvent, params ...any) error {
 	trace, err := machine.ProcessEvent(event, params...)
 	if err != nil {
 		return fmt.Errorf("process %s from %s: %w", event, trace.FromState, err)

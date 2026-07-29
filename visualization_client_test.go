@@ -13,17 +13,12 @@ type visualizationTestPayload struct {
 	Count int `json:"count"`
 }
 
-func (p visualizationTestPayload) JSON() ([]byte, error) { return json.Marshal(p) }
-func (p visualizationTestPayload) DisplayName() string   { return "" }
-func (p visualizationTestPayload) Category() string      { return "" }
+func (p *visualizationTestPayload) JSON() ([]byte, error) { return json.Marshal(p) }
+func (p *visualizationTestPayload) DisplayName() string   { return "" }
+func (p *visualizationTestPayload) Category() string      { return "" }
 
 func TestFSMImplementsPushClientDirectly(t *testing.T) {
-	server := visualization.NewServerWithConfig(visualization.ServerConfig{
-		TraceLimit: 2,
-		Replay: visualization.ReplayStorageConfig{
-			JSONL: visualization.ReplayJSONLConfig{Directory: t.TempDir()},
-		},
-	})
+	server := visualization.NewServerWithConfig(visualization.ServerConfig{TraceLimit: 2})
 	defer server.Close(context.Background())
 	machine := NewFSM("door", FSMState("closed"), &visualizationTestPayload{})
 	machine.Describe = "warehouse door state machine"
@@ -32,7 +27,7 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 		"open",
 		"closed",
 		"opened",
-		Handler[visualizationTestPayload]{Handler: func(current *FSM[visualizationTestPayload], _ ...any) error {
+		Handler[*visualizationTestPayload]{Handler: func(current *FSM[*visualizationTestPayload], _ ...any) error {
 			current.Payload.Count++
 			return nil
 		}},
@@ -108,9 +103,9 @@ type emptyPayload struct {
 	Data struct{}
 }
 
-func (d emptyPayload) JSON() ([]byte, error) { return json.Marshal(d) }
-func (d emptyPayload) DisplayName() string   { return "" }
-func (d emptyPayload) Category() string      { return "" }
+func (d *emptyPayload) JSON() ([]byte, error) { return json.Marshal(d) }
+func (d *emptyPayload) DisplayName() string   { return "" }
+func (d *emptyPayload) Category() string      { return "" }
 
 func TestFSMUsesDefaultVisualizationConfig(t *testing.T) {
 	server := visualization.NewServer()

@@ -10,7 +10,7 @@ import (
 )
 
 func TestAsyncEventPriorityOrder(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	defer machine.Close()
 
 	blockStarted := make(chan struct{})
@@ -24,17 +24,17 @@ func TestAsyncEventPriorityOrder(t *testing.T) {
 	}
 
 	machine.SetTransitions(
-		NewTransitionItem("block", "idle", "idle", Handler[testPayload]{Handler: func(_ *FSM[testPayload], _ ...any) error {
+		NewTransitionItem("block", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			close(blockStarted)
 			<-releaseBlock
 			appendOrder("direct")
 			return nil
 		}}),
-		NewTransitionItem("low", "idle", "idle", Handler[testPayload]{Handler: func(_ *FSM[testPayload], _ ...any) error {
+		NewTransitionItem("low", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			appendOrder("low")
 			return nil
 		}}),
-		NewTransitionItem("high", "idle", "idle", Handler[testPayload]{Handler: func(_ *FSM[testPayload], _ ...any) error {
+		NewTransitionItem("high", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			appendOrder("high")
 			return nil
 		}}),
@@ -76,18 +76,18 @@ func TestAsyncEventPriorityOrder(t *testing.T) {
 }
 
 func TestDirectProcessEventHasPriorityOverQueuedHighEvent(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	defer machine.Close()
 	var mu sync.Mutex
 	var order []string
 	machine.SetTransitions(
-		NewTransitionItem("direct", "idle", "idle", Handler[testPayload]{Handler: func(_ *FSM[testPayload], _ ...any) error {
+		NewTransitionItem("direct", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			mu.Lock()
 			order = append(order, "direct")
 			mu.Unlock()
 			return nil
 		}}),
-		NewTransitionItem("queued", "idle", "idle", Handler[testPayload]{Handler: func(_ *FSM[testPayload], _ ...any) error {
+		NewTransitionItem("queued", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			mu.Lock()
 			order = append(order, "queued")
 			mu.Unlock()
@@ -129,7 +129,7 @@ func TestDirectProcessEventHasPriorityOverQueuedHighEvent(t *testing.T) {
 func TestSubmitEventWithoutContextAndNotifyIsFireAndForget(t *testing.T) {
 	machine, releaseBlock := newBlockedFSM(t)
 	ran := make(chan struct{})
-	machine.SetTransitions(NewTransitionItem("fire", "idle", "idle", Handler[testPayload]{Handler: func(fsm *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("fire", "idle", "idle", Handler[*testPayload]{Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 		if fsm.GetEventContext().Done() != nil {
 			t.Error("fire-and-forget event unexpectedly received a cancelable context")
 		}
@@ -184,7 +184,7 @@ func TestAsyncEventExpiresWhileWaitingAndIsRemoved(t *testing.T) {
 func TestFireAndForgetExpirationRemovesEventWithoutRunningHandler(t *testing.T) {
 	machine, releaseBlock := newBlockedFSM(t)
 	var ran atomic.Bool
-	machine.SetTransitions(NewTransitionItem("expire", "idle", "idle", Handler[testPayload]{Handler: func(_ *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("expire", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 		ran.Store(true)
 		return nil
 	}}))
@@ -221,11 +221,11 @@ func TestFireAndForgetExpirationRemovesEventWithoutRunningHandler(t *testing.T) 
 }
 
 func TestAsyncEventExpirationDoesNotCancelRunningHandler(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	defer machine.Close()
 	started := make(chan struct{})
 	release := make(chan struct{})
-	machine.SetTransitions(NewTransitionItem("run", "idle", "done", Handler[testPayload]{Handler: func(fsm *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("run", "idle", "done", Handler[*testPayload]{Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 		if _, hasDeadline := fsm.GetEventContext().Deadline(); hasDeadline {
 			return errors.New("queue expiration leaked into running context")
 		}
@@ -279,11 +279,11 @@ func TestQueuedContextCancellationRemovesEventAndNotifies(t *testing.T) {
 }
 
 func TestRunningAsyncEventObservesContextCancellation(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	defer machine.Close()
 	started := make(chan struct{})
-	machine.SetTransitions(NewTransitionItem("wait", "idle", "done", Handler[testPayload]{
-		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("wait", "idle", "done", Handler[*testPayload]{
+		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			close(started)
 			<-fsm.GetEventContext().Done()
 			return nil
@@ -312,10 +312,10 @@ func TestRunningAsyncEventObservesContextCancellation(t *testing.T) {
 }
 
 func TestCloseCancelsRunningTrackedEvent(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	started := make(chan struct{})
-	machine.SetTransitions(NewTransitionItem("wait", "idle", "done", Handler[testPayload]{
-		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("wait", "idle", "done", Handler[*testPayload]{
+		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			close(started)
 			<-fsm.GetEventContext().Done()
 			return nil
@@ -337,10 +337,10 @@ func TestCloseCancelsRunningTrackedEvent(t *testing.T) {
 }
 
 func TestCloseWaitsForRunningFireAndForgetEvent(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	started := make(chan struct{})
 	release := make(chan struct{})
-	machine.SetTransitions(NewTransitionItem("wait", "idle", "done", Handler[testPayload]{Handler: func(_ *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("wait", "idle", "done", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 		close(started)
 		<-release
 		return nil
@@ -389,7 +389,7 @@ func TestCloseCancelsTrackedEventQueuedBehindDirectProcessing(t *testing.T) {
 }
 
 func TestAsyncEventOptionValidationAndPairing(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	defer machine.Close()
 	if _, err := machine.SubmitEvent("event", WithEventPriority(99)); !errors.Is(err, ErrorInvalidEventPriority) {
 		t.Fatalf("invalid priority error = %v", err)
@@ -413,9 +413,9 @@ func TestAsyncEventOptionValidationAndPairing(t *testing.T) {
 }
 
 func TestAsyncEventAbsoluteExpiration(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	defer machine.Close()
-	machine.SetTransitions(NewTransitionItem[testPayload]("event", "idle", "done", Handler[testPayload]{}))
+	machine.SetTransitions(NewTransitionItem[*testPayload]("event", "idle", "done", Handler[*testPayload]{}))
 
 	receipt, notify, cancel := submitTrackedEvent(t, machine, "event", WithEventExpiresAt(time.Now().Add(-time.Millisecond)))
 	defer cancel()
@@ -432,7 +432,7 @@ func TestAsyncEventAbsoluteExpiration(t *testing.T) {
 }
 
 func TestSubmitAfterClose(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	if err := machine.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +443,7 @@ func TestSubmitAfterClose(t *testing.T) {
 
 func submitTrackedEvent(
 	t *testing.T,
-	machine *FSM[testPayload],
+	machine *FSM[*testPayload],
 	event FSMEvent,
 	options ...AsyncEventOption,
 ) (*AsyncEventReceipt, <-chan AsyncEventResult, context.CancelFunc) {
@@ -463,18 +463,18 @@ func submitTrackedEvent(
 	return receipt, notify, cancel
 }
 
-func newBlockedFSM(t *testing.T) (*FSM[testPayload], chan struct{}) {
+func newBlockedFSM(t *testing.T) (*FSM[*testPayload], chan struct{}) {
 	t.Helper()
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	started := make(chan struct{})
 	release := make(chan struct{})
 	machine.SetTransitions(
-		NewTransitionItem("block", "idle", "idle", Handler[testPayload]{Handler: func(_ *FSM[testPayload], _ ...any) error {
+		NewTransitionItem("block", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			close(started)
 			<-release
 			return nil
 		}}),
-		NewTransitionItem[testPayload]("queued", "idle", "idle", Handler[testPayload]{}),
+		NewTransitionItem[*testPayload]("queued", "idle", "idle", Handler[*testPayload]{}),
 	)
 	go func() { _, _ = machine.ProcessEvent("block") }()
 	waitSignal(t, started, "blocking event start")
@@ -503,7 +503,7 @@ func waitNotification(t *testing.T, notify <-chan AsyncEventResult) AsyncEventRe
 	}
 }
 
-func waitPendingCount(t *testing.T, machine *FSM[testPayload], wantHigh, wantLow int) {
+func waitPendingCount(t *testing.T, machine *FSM[*testPayload], wantHigh, wantLow int) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {

@@ -22,14 +22,14 @@ type Payload struct {
 	History          []string `json:"history,omitempty"`
 }
 
-func (p Payload) JSON() ([]byte, error) {
+func (p *Payload) JSON() ([]byte, error) {
 	return json.Marshal(p)
 }
 
-func (p Payload) DisplayName() string {
+func (p *Payload) DisplayName() string {
 	return p.Name
 }
 
-func (p Payload) Category() string {
+func (p *Payload) Category() string {
 	return "player"
 }

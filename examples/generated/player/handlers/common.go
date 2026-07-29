@@ -9,8 +9,8 @@ import (
 )
 
 // GetHandler_s_ATTACK_HEAVY_e_ANIM_END returns the handler for this transition.
-func GetHandler_s_ATTACK_HEAVY_e_ANIM_END() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_ATTACK_HEAVY_e_ANIM_END() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_ATTACK_HEAVY_e_ANIM_END,
 		Handler:       _In_s_ATTACK_HEAVY_e_ANIM_END,
 		AfterHandler:  _After_s_ATTACK_HEAVY_e_ANIM_END,
@@ -18,8 +18,8 @@ func GetHandler_s_ATTACK_HEAVY_e_ANIM_END() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_ATTACK_HEAVY_e_DAMAGE returns the handler for this transition.
-func GetHandler_s_ATTACK_HEAVY_e_DAMAGE() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_ATTACK_HEAVY_e_DAMAGE() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_ATTACK_HEAVY_e_DAMAGE,
 		Handler:       _In_s_ATTACK_HEAVY_e_DAMAGE,
 		AfterHandler:  _After_s_ATTACK_HEAVY_e_DAMAGE,
@@ -27,8 +27,8 @@ func GetHandler_s_ATTACK_HEAVY_e_DAMAGE() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_ATTACK_HEAVY_e_DEAD returns the handler for this transition.
-func GetHandler_s_ATTACK_HEAVY_e_DEAD() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_ATTACK_HEAVY_e_DEAD() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_ATTACK_HEAVY_e_DEAD,
 		Handler:       _In_s_ATTACK_HEAVY_e_DEAD,
 		AfterHandler:  _After_s_ATTACK_HEAVY_e_DEAD,
@@ -36,8 +36,8 @@ func GetHandler_s_ATTACK_HEAVY_e_DEAD() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_ATTACK_LIGHT_e_ANIM_END returns the handler for this transition.
-func GetHandler_s_ATTACK_LIGHT_e_ANIM_END() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_ATTACK_LIGHT_e_ANIM_END() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_ATTACK_LIGHT_e_ANIM_END,
 		Handler:       _In_s_ATTACK_LIGHT_e_ANIM_END,
 		AfterHandler:  _After_s_ATTACK_LIGHT_e_ANIM_END,
@@ -45,8 +45,8 @@ func GetHandler_s_ATTACK_LIGHT_e_ANIM_END() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_ATTACK_LIGHT_e_DAMAGE returns the handler for this transition.
-func GetHandler_s_ATTACK_LIGHT_e_DAMAGE() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_ATTACK_LIGHT_e_DAMAGE() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_ATTACK_LIGHT_e_DAMAGE,
 		Handler:       _In_s_ATTACK_LIGHT_e_DAMAGE,
 		AfterHandler:  _After_s_ATTACK_LIGHT_e_DAMAGE,
@@ -54,8 +54,8 @@ func GetHandler_s_ATTACK_LIGHT_e_DAMAGE() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_ATTACK_LIGHT_e_DEAD returns the handler for this transition.
-func GetHandler_s_ATTACK_LIGHT_e_DEAD() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_ATTACK_LIGHT_e_DEAD() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_ATTACK_LIGHT_e_DEAD,
 		Handler:       _In_s_ATTACK_LIGHT_e_DEAD,
 		AfterHandler:  _After_s_ATTACK_LIGHT_e_DEAD,
@@ -63,8 +63,8 @@ func GetHandler_s_ATTACK_LIGHT_e_DEAD() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_DIE_e_REVIVE returns the handler for this transition.
-func GetHandler_s_DIE_e_REVIVE() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_DIE_e_REVIVE() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_DIE_e_REVIVE,
 		Handler:       _In_s_DIE_e_REVIVE,
 		AfterHandler:  _After_s_DIE_e_REVIVE,
@@ -72,8 +72,8 @@ func GetHandler_s_DIE_e_REVIVE() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_HURT_e_ANIM_END returns the handler for this transition.
-func GetHandler_s_HURT_e_ANIM_END() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_HURT_e_ANIM_END() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_HURT_e_ANIM_END,
 		Handler:       _In_s_HURT_e_ANIM_END,
 		AfterHandler:  _After_s_HURT_e_ANIM_END,
@@ -81,8 +81,8 @@ func GetHandler_s_HURT_e_ANIM_END() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_HURT_e_DEAD returns the handler for this transition.
-func GetHandler_s_HURT_e_DEAD() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_HURT_e_DEAD() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_HURT_e_DEAD,
 		Handler:       _In_s_HURT_e_DEAD,
 		AfterHandler:  _After_s_HURT_e_DEAD,
@@ -90,8 +90,8 @@ func GetHandler_s_HURT_e_DEAD() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IDLE_e_DAMAGE returns the handler for this transition.
-func GetHandler_s_IDLE_e_DAMAGE() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IDLE_e_DAMAGE() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IDLE_e_DAMAGE,
 		Handler:       _In_s_IDLE_e_DAMAGE,
 		AfterHandler:  _After_s_IDLE_e_DAMAGE,
@@ -99,8 +99,8 @@ func GetHandler_s_IDLE_e_DAMAGE() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IDLE_e_DEAD returns the handler for this transition.
-func GetHandler_s_IDLE_e_DEAD() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IDLE_e_DEAD() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IDLE_e_DEAD,
 		Handler:       _In_s_IDLE_e_DEAD,
 		AfterHandler:  _After_s_IDLE_e_DEAD,
@@ -108,8 +108,8 @@ func GetHandler_s_IDLE_e_DEAD() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IDLE_e_HIT_HEAVY returns the handler for this transition.
-func GetHandler_s_IDLE_e_HIT_HEAVY() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IDLE_e_HIT_HEAVY() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IDLE_e_HIT_HEAVY,
 		Handler:       _In_s_IDLE_e_HIT_HEAVY,
 		AfterHandler:  _After_s_IDLE_e_HIT_HEAVY,
@@ -117,8 +117,8 @@ func GetHandler_s_IDLE_e_HIT_HEAVY() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IDLE_e_HIT_LIGHT returns the handler for this transition.
-func GetHandler_s_IDLE_e_HIT_LIGHT() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IDLE_e_HIT_LIGHT() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IDLE_e_HIT_LIGHT,
 		Handler:       _In_s_IDLE_e_HIT_LIGHT,
 		AfterHandler:  _After_s_IDLE_e_HIT_LIGHT,
@@ -126,8 +126,8 @@ func GetHandler_s_IDLE_e_HIT_LIGHT() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IDLE_e_JUMP returns the handler for this transition.
-func GetHandler_s_IDLE_e_JUMP() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IDLE_e_JUMP() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IDLE_e_JUMP,
 		Handler:       _In_s_IDLE_e_JUMP,
 		AfterHandler:  _After_s_IDLE_e_JUMP,
@@ -135,8 +135,8 @@ func GetHandler_s_IDLE_e_JUMP() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IDLE_e_MOVE returns the handler for this transition.
-func GetHandler_s_IDLE_e_MOVE() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IDLE_e_MOVE() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IDLE_e_MOVE,
 		Handler:       _In_s_IDLE_e_MOVE,
 		AfterHandler:  _After_s_IDLE_e_MOVE,
@@ -144,8 +144,8 @@ func GetHandler_s_IDLE_e_MOVE() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IDLE_e_RUN returns the handler for this transition.
-func GetHandler_s_IDLE_e_RUN() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IDLE_e_RUN() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IDLE_e_RUN,
 		Handler:       _In_s_IDLE_e_RUN,
 		AfterHandler:  _After_s_IDLE_e_RUN,
@@ -153,8 +153,8 @@ func GetHandler_s_IDLE_e_RUN() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IN_AIR_e_DAMAGE returns the handler for this transition.
-func GetHandler_s_IN_AIR_e_DAMAGE() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IN_AIR_e_DAMAGE() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IN_AIR_e_DAMAGE,
 		Handler:       _In_s_IN_AIR_e_DAMAGE,
 		AfterHandler:  _After_s_IN_AIR_e_DAMAGE,
@@ -162,8 +162,8 @@ func GetHandler_s_IN_AIR_e_DAMAGE() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IN_AIR_e_DEAD returns the handler for this transition.
-func GetHandler_s_IN_AIR_e_DEAD() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IN_AIR_e_DEAD() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IN_AIR_e_DEAD,
 		Handler:       _In_s_IN_AIR_e_DEAD,
 		AfterHandler:  _After_s_IN_AIR_e_DEAD,
@@ -171,8 +171,8 @@ func GetHandler_s_IN_AIR_e_DEAD() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_IN_AIR_e_LAND returns the handler for this transition.
-func GetHandler_s_IN_AIR_e_LAND() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_IN_AIR_e_LAND() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_IN_AIR_e_LAND,
 		Handler:       _In_s_IN_AIR_e_LAND,
 		AfterHandler:  _After_s_IN_AIR_e_LAND,
@@ -180,8 +180,8 @@ func GetHandler_s_IN_AIR_e_LAND() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_JUMP_START_e_ANIM_END returns the handler for this transition.
-func GetHandler_s_JUMP_START_e_ANIM_END() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_JUMP_START_e_ANIM_END() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_JUMP_START_e_ANIM_END,
 		Handler:       _In_s_JUMP_START_e_ANIM_END,
 		AfterHandler:  _After_s_JUMP_START_e_ANIM_END,
@@ -189,8 +189,8 @@ func GetHandler_s_JUMP_START_e_ANIM_END() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_RUN_e_DAMAGE returns the handler for this transition.
-func GetHandler_s_RUN_e_DAMAGE() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_RUN_e_DAMAGE() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_RUN_e_DAMAGE,
 		Handler:       _In_s_RUN_e_DAMAGE,
 		AfterHandler:  _After_s_RUN_e_DAMAGE,
@@ -198,8 +198,8 @@ func GetHandler_s_RUN_e_DAMAGE() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_RUN_e_DEAD returns the handler for this transition.
-func GetHandler_s_RUN_e_DEAD() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_RUN_e_DEAD() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_RUN_e_DEAD,
 		Handler:       _In_s_RUN_e_DEAD,
 		AfterHandler:  _After_s_RUN_e_DEAD,
@@ -207,8 +207,8 @@ func GetHandler_s_RUN_e_DEAD() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_RUN_e_JUMP returns the handler for this transition.
-func GetHandler_s_RUN_e_JUMP() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_RUN_e_JUMP() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_RUN_e_JUMP,
 		Handler:       _In_s_RUN_e_JUMP,
 		AfterHandler:  _After_s_RUN_e_JUMP,
@@ -216,8 +216,8 @@ func GetHandler_s_RUN_e_JUMP() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_RUN_e_MOVE returns the handler for this transition.
-func GetHandler_s_RUN_e_MOVE() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_RUN_e_MOVE() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_RUN_e_MOVE,
 		Handler:       _In_s_RUN_e_MOVE,
 		AfterHandler:  _After_s_RUN_e_MOVE,
@@ -225,8 +225,8 @@ func GetHandler_s_RUN_e_MOVE() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_RUN_e_STOP returns the handler for this transition.
-func GetHandler_s_RUN_e_STOP() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_RUN_e_STOP() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_RUN_e_STOP,
 		Handler:       _In_s_RUN_e_STOP,
 		AfterHandler:  _After_s_RUN_e_STOP,
@@ -234,8 +234,8 @@ func GetHandler_s_RUN_e_STOP() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_WALK_e_DAMAGE returns the handler for this transition.
-func GetHandler_s_WALK_e_DAMAGE() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_WALK_e_DAMAGE() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_WALK_e_DAMAGE,
 		Handler:       _In_s_WALK_e_DAMAGE,
 		AfterHandler:  _After_s_WALK_e_DAMAGE,
@@ -243,8 +243,8 @@ func GetHandler_s_WALK_e_DAMAGE() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_WALK_e_DEAD returns the handler for this transition.
-func GetHandler_s_WALK_e_DEAD() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_WALK_e_DEAD() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_WALK_e_DEAD,
 		Handler:       _In_s_WALK_e_DEAD,
 		AfterHandler:  _After_s_WALK_e_DEAD,
@@ -252,8 +252,8 @@ func GetHandler_s_WALK_e_DEAD() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_WALK_e_HIT_HEAVY returns the handler for this transition.
-func GetHandler_s_WALK_e_HIT_HEAVY() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_WALK_e_HIT_HEAVY() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_WALK_e_HIT_HEAVY,
 		Handler:       _In_s_WALK_e_HIT_HEAVY,
 		AfterHandler:  _After_s_WALK_e_HIT_HEAVY,
@@ -261,8 +261,8 @@ func GetHandler_s_WALK_e_HIT_HEAVY() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_WALK_e_HIT_LIGHT returns the handler for this transition.
-func GetHandler_s_WALK_e_HIT_LIGHT() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_WALK_e_HIT_LIGHT() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_WALK_e_HIT_LIGHT,
 		Handler:       _In_s_WALK_e_HIT_LIGHT,
 		AfterHandler:  _After_s_WALK_e_HIT_LIGHT,
@@ -270,8 +270,8 @@ func GetHandler_s_WALK_e_HIT_LIGHT() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_WALK_e_JUMP returns the handler for this transition.
-func GetHandler_s_WALK_e_JUMP() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_WALK_e_JUMP() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_WALK_e_JUMP,
 		Handler:       _In_s_WALK_e_JUMP,
 		AfterHandler:  _After_s_WALK_e_JUMP,
@@ -279,8 +279,8 @@ func GetHandler_s_WALK_e_JUMP() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_WALK_e_RUN returns the handler for this transition.
-func GetHandler_s_WALK_e_RUN() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_WALK_e_RUN() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_WALK_e_RUN,
 		Handler:       _In_s_WALK_e_RUN,
 		AfterHandler:  _After_s_WALK_e_RUN,
@@ -288,8 +288,8 @@ func GetHandler_s_WALK_e_RUN() fsm.Handler[types.Payload] {
 }
 
 // GetHandler_s_WALK_e_STOP returns the handler for this transition.
-func GetHandler_s_WALK_e_STOP() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_WALK_e_STOP() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_WALK_e_STOP,
 		Handler:       _In_s_WALK_e_STOP,
 		AfterHandler:  _After_s_WALK_e_STOP,

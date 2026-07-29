@@ -155,6 +155,10 @@ func TestGeneratorsProduceStableValidHandlerCode(t *testing.T) {
 	if !strings.Contains(factoryText, `f.Describe = "Door workflow"`) {
 		t.Fatalf("generated factory missing description:\n%s", factory)
 	}
+	if !strings.Contains(factoryText, "func NewFSMDoor(payload *types.Payload) *fsm.FSM[*types.Payload]") ||
+		!strings.Contains(factoryText, "fsm.NewFSM[*types.Payload](types.FSMNameDoor, types.StateEnum.Idle, payload)") {
+		t.Fatalf("generated factory does not require a payload pointer:\n%s", factory)
+	}
 	if !strings.Contains(factoryText, "types.StateEnum.Idle") ||
 		!strings.Contains(factoryText, "types.EventEnum.Start") ||
 		!strings.Contains(factoryText, "handlers.GetHandler_s_Idle_e_Start()") {
@@ -191,7 +195,7 @@ func TestGeneratorsProduceStableValidHandlerCode(t *testing.T) {
 		!strings.Contains(handlerText, "_After_s_Idle_e_Start") {
 		t.Fatalf("generated handler does not contain all stages:\n%s", handlerCode)
 	}
-	if got := strings.Count(handlerText, "f *fsm.FSM[types.Payload], _ ...any"); got != 3 {
+	if got := strings.Count(handlerText, "f *fsm.FSM[*types.Payload], _ ...any"); got != 3 {
 		t.Fatalf("generated handler Actor signatures = %d, want 3:\n%s", got, handlerCode)
 	}
 

@@ -180,7 +180,7 @@ function TracePanel({ traces }) {
 
 function ReplayPage() {
   const [sources, setSources] = useState([]), [source, setSource] = useState("primary"), [records, setRecords] = useState([]), [selected, setSelected] = useState(null), [playing, setPlaying] = useState(false)
-  const load = useCallback(async () => { const [s, r] = await Promise.all([api.replaySources(), api.replayRecords(source)]); setSources(s); setRecords(r); setSelected(r[0] ? await api.replayRecord(source, r[0].id) : null) }, [source])
+  const load = useCallback(async () => { const s = await api.replaySources(); setSources(s); const next = s.some((item) => item.id === source) ? source : (s[0]?.id || ''); if (next !== source) { setSource(next); return } if (!next) { setRecords([]); setSelected(null); return } const r = await api.replayRecords(next); setRecords(r); setSelected(r[0] ? await api.replayRecord(next, r[0].id) : null) }, [source])
   useEffect(() => { load().catch(console.error) }, [load])
   useEffect(() => { if (!playing || records.length < 2) return; const ordered = [...records].reverse(); let index = Math.max(0, ordered.findIndex((x) => x.id === selected?.id)); const timer = setInterval(async () => { index = (index + 1) % ordered.length; setSelected(await api.replayRecord(source, ordered[index].id)) }, 1000); return () => clearInterval(timer) }, [playing, records, selected?.id, source])
   const removeSelected = async () => { if (!selected || !window.confirm('删除当前回放记录？')) return; setPlaying(false); await api.deleteReplayRecord(source, selected.id); await load() }

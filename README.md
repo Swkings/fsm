@@ -13,6 +13,20 @@ go run ./examples/server
 
 `examples/generated` 会读取 `examples/generated/config.yaml` 启动可视化 Client Server，并每隔随机 3～5 秒触发当前状态下的一个合法事件。完整说明见 [`examples`](./examples/README.md)。
 
+通用配置模型可直接使用 `config.Config`。其中 `FSM` 是顶层字段，可由第三方应用复用或嵌入到自己的配置结构：
+
+```yaml
+FSM:
+  Name: PlayerAction
+  InitialState: IDLE
+  StoreKey: generated/player
+Store:
+  JSONL:
+    Directory: data/fsm
+Visualization:
+  ServerAddress: 127.0.0.1:5005
+```
+
 ## 使用模板生成代码
 
 ```bash
@@ -58,11 +72,13 @@ FSM:
 
 任一阶段返回错误都会终止转移，目标状态不会提交，错误会同时写入 `TransitionTrace`。Payload 内部业务数据不会自动回滚，需要 Handler 自行保证事务或补偿。
 
-事件参数可通过 `ProcessEvent(event, params...)` 或 `ProcessEventContext(ctx, event, params...)` 传入。`BeforeHandler`、`Handler` 和 `AfterHandler` 统一使用 `Actor[T]` 签名：`func(*FSM[T], ...any) error`。不使用参数时可将其命名为 `_ ...any`：
+事件参数可通过 `ProcessEvent(event, params...)` 或 `ProcessEventContext(ctx, event, params...)` 传入。Payload 在创建 FSM 时以指针传入，泛型 `T` 因而是 `*Payload`；调用方和 Handler 始终修改同一个对象。`BeforeHandler`、`Handler` 和 `AfterHandler` 统一使用 `Actor[T]` 签名：`func(*FSM[T], ...any) error`。不使用参数时可将其命名为 `_ ...any`：
 
 ```go
-handler := fsm.Handler[Payload]{
-    Handler: func(machine *fsm.FSM[Payload], params ...any) error {
+payload := &Payload{TargetHealth: 100}
+machine := fsm.NewFSM[*Payload]("player", StateIdle, payload)
+handler := fsm.Handler[*Payload]{
+    Handler: func(machine *fsm.FSM[*Payload], params ...any) error {
         attack := params[0].(AttackParams)
         machine.Payload.TargetHealth -= attack.Damage
         return nil
@@ -137,6 +153,63 @@ _ = result
 
 运行中事件的取消是协作式的，Handler 可通过 `machine.GetEventContext()` 监听提交方的 `ctx.Done()`；若 Handler 长时间阻塞且不监听 context，FSM 无法强制终止它。应用退出时应从 Handler 外部调用 `Close`，用于清理剩余事件并等待队列 worker 结束。
 
+## FSM 数据持久化与重启恢复
+
+配置模型位于 `github.com/swkings/fsm/config`，持久化实现位于 `github.com/swkings/fsm/store`。Store 是 FSM 的核心能力，不依赖可视化包：
+
+```go
+backend, err := store.New(config.Store{
+    JSONL: config.JSONL{
+        Directory: "data/fsm",
+        Filename:  "orders.jsonl",
+    },
+})
+if err != nil {
+    return err
+}
+defer backend.Close()
+
+payload := &OrderPayload{/* ... */}
+machine := NewFSM("order", "pending", payload)
+machine.SetTransitions(/* ... */)
+if err := machine.BindStore(ctx, backend, "orders/order-1001"); err != nil {
+    return err
+}
+```
+
+`BindStore` 使用稳定的业务 key 查询最近一次成功记录：存在记录时恢复 InstanceID、TransitionID、当前/上一状态、上一事件、描述及 Payload；不存在记录时保存初始检查点。绑定后每次事件结束都会同步保存 FSM 数据、转移定义以及进入/退出 FSM 的 Trace。`SetPayload` 或 `SetCurrentState` 等非事件修改后可调用 `machine.Save(ctx)` 创建显式检查点。Store 生命周期由调用方管理，一个 Store 可以供多个 FSM 共享。
+
+未配置数据库时 `store.New(config.Store{})` 默认使用 `data/fsm/fsm.jsonl`。MySQL 和 Redis 通过同一配置模型选择：
+
+```go
+config.Store{
+    Driver: config.StoreDriverMySQL,
+    MySQL: config.MySQL{
+        DSN:   "fsm:secret@tcp(mysql:3306)/fsm?parseTime=true",
+        Table: "fsm_records",
+    },
+}
+
+config.Store{
+    Driver: config.StoreDriverRedis,
+    Redis: config.Redis{
+        Address:   "redis:6379",
+        DB:        0,
+        KeyPrefix: "fsm:store",
+    },
+}
+```
+
+Store 集成测试默认连接 `127.0.0.1:3306` 和 `127.0.0.1:6379`；默认连接不可用时会跳过。需要认证或使用其它地址时可显式配置，显式配置后的连接失败会令测试失败：
+
+```bash
+FSM_TEST_MYSQL_DSN='user:password@tcp(127.0.0.1:3306)/test?parseTime=true' \
+FSM_TEST_REDIS_ADDRESS='127.0.0.1:6379' \
+FSM_TEST_REDIS_PASSWORD='password' \
+FSM_TEST_REDIS_DB='0' \
+go test ./store -v
+```
+
 ## 实时可视化
 
 可视化能力位于独立的 `github.com/swkings/fsm/visualization` 包。业务进程和独立聚合服务使用同一个 `Server` 实现，但承担不同职责：
@@ -151,17 +224,15 @@ _ = result
 
 ```go
 clientServer := visualization.NewServer(
-    visualization.VisualizationConfig{
+    config.Visualization{
         ServerAddress: "0.0.0.0:5005",
         TraceLimit:    100,
         PathPrefix:    "production",
-        Replay: visualization.ReplayStorageConfig{
-            JSONL: visualization.ReplayJSONLConfig{
-                Directory: "data/replay",
-            },
-        },
     },
 )
+if err := clientServer.RegisterReplayStore("primary", "Production FSM Store", backend); err != nil {
+    return err
+}
 if err := clientServer.Start(); err != nil {
     return err
 }
@@ -170,29 +241,7 @@ defer visualization.ShutdownClientServer(context.Background())
 fmt.Println(visualization.ClientServerURL())
 ```
 
-每次完成事件处理后都会把最新 FSM 快照写入 Replay 存储。未配置 `Replay.Driver` 或数据库连接时默认使用 JSONL，默认目录为 `data/replay`。也可以显式选择 MySQL 或 Redis：
-
-```go
-Replay: visualization.ReplayStorageConfig{
-    Driver: "mysql",
-    MySQL: visualization.ReplayMySQLConfig{
-        DSN:   "fsm:secret@tcp(mysql:3306)/fsm?parseTime=true",
-        Table: "fsm_replay_records",
-    },
-}
-
-// 或
-Replay: visualization.ReplayStorageConfig{
-    Driver: "redis",
-    Redis: visualization.ReplayRedisConfig{
-        Address:   "redis:6379",
-        DB:        0,
-        KeyPrefix: "fsm:replay",
-    },
-}
-```
-
-`examples/generated/config.yaml` 展示了通过 YAML 配置 JSONL 落盘，示例程序读取该配置后创建可视化 Server，无需把存储参数写进生成代码。
+`RegisterReplayStore` 只把已有 FSM Store 挂载为 Replay 数据源，不接管 Store 生命周期，也不会写入 FSM 数据。`examples/generated/config.yaml` 使用顶层 `Store` 配置创建持久化后端，再由 FSM 和可视化 Replay 共享。
 
 内置 `fsm.FSM` 从 Payload 获取每个实例的显示名称和相对目录：
 
@@ -301,7 +350,7 @@ Web 页面实时展示：
 - Header 左侧展示当前 FSM 完整路径，最右侧按钮用于展开或折叠 Header 下方的右侧 Inspector；Inspector 顶部使用横向 Nav，目前提供 Payload。Active Event 面板通过自身标题栏折叠或展开，Trace 固定在底部状态栏并可展开完整记录。Header 的全局透明度会同步作用于左右侧栏以及 Active Event、Payload、Trace 等面板，默认 85%。
 - 明暗主题切换、pull 采集错误以及动态注册/注销。
 
-Header 中部提供 `Visualization` 与 `Replay` 两个版面。Replay 可选择数据源、浏览记录、播放状态变化、查看当时的状态图和 Payload，并删除记录。设置页的“数据源发现”支持运行时添加 JSONL 目录、MySQL 或 Redis 数据源；主存储来自 `ServerConfig.Replay`/`VisualizationConfig.Replay`，未配置时自动回退 JSONL。
+Header 中部提供 `Visualization` 与 `Replay` 两个版面。Replay 可选择数据源、浏览记录、播放状态变化、查看当时的状态图和 Payload，并删除记录。设置页的“数据源发现”支持运行时挂载 JSONL 目录、MySQL 或 Redis Store。可视化服务只读取和管理这些数据源，不负责 FSM 落盘；FSM 持久化必须由业务侧创建 Store 并调用 `BindStore`。
 
 Replay HTTP API 包括 `GET/POST /api/replay/sources`、`DELETE /api/replay/sources/{id}`、`GET /api/replay/records`、`GET /api/replay/records/{id}` 和 `DELETE /api/replay/records/{id}`。记录接口使用 `source` 查询参数选择数据源，并可用 `fsmId` 过滤状态机。
 

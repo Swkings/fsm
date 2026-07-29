@@ -14,12 +14,12 @@ type visualizationMetadataPayload struct {
 	Progress int    `json:"progress"`
 }
 
-func (payload visualizationMetadataPayload) JSON() ([]byte, error) {
+func (payload *visualizationMetadataPayload) JSON() ([]byte, error) {
 	return json.Marshal(payload)
 }
 
-func (payload visualizationMetadataPayload) DisplayName() string { return payload.Name }
-func (payload visualizationMetadataPayload) Category() string    { return payload.SubPath }
+func (payload *visualizationMetadataPayload) DisplayName() string { return payload.Name }
+func (payload *visualizationMetadataPayload) Category() string    { return payload.SubPath }
 
 func TestRegisterClientUsesPayloadMetadataAndServerPathPrefix(t *testing.T) {
 	_ = visualization.ShutdownClientServer(context.Background())

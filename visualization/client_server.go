@@ -6,18 +6,15 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/swkings/fsm/config"
 )
 
 var ErrClientServerNotConfigured = errors.New("visualization client server is not configured")
 
 // VisualizationConfig 配置业务进程内的全局单例可视化 Server。
 // PathPrefix 会与各 Client 提供的 Path 组合；两者都允许为空。
-type VisualizationConfig struct {
-	ServerAddress string
-	TraceLimit    int
-	PathPrefix    string
-	Replay        ReplayStorageConfig `json:",optional"`
-}
+type VisualizationConfig = config.Visualization
 
 // RegistrationConfigProvider 允许 Client 自行提供显示名称、目录和采集模式。
 // fsm.FSM 会从 Payload 的 DisplayName() 与 Category() 方法生成该配置。
@@ -39,7 +36,6 @@ func newClientServer(config VisualizationConfig) *Server {
 	server := NewServerWithConfig(ServerConfig{
 		Address:    config.ServerAddress,
 		TraceLimit: config.TraceLimit,
-		Replay:     config.Replay,
 	})
 	server.pathPrefix = strings.TrimSpace(config.PathPrefix)
 	processClientServer.server = server

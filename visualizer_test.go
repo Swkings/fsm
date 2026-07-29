@@ -10,7 +10,7 @@ import (
 
 func TestDotStringIncludesIsolatedCurrentStateAndEscapesText(t *testing.T) {
 	current := FSMState("idle\"state")
-	machine := NewFSM[testPayload]("test", current)
+	machine := NewFSM("test", current, &testPayload{})
 
 	dot := machine.DotString()
 	if !strings.Contains(dot, strconv.Quote(string(current))) {
@@ -24,8 +24,8 @@ func TestDotStringIncludesIsolatedCurrentStateAndEscapesText(t *testing.T) {
 func TestMermaidUsesStableIDsAndEscapedLabels(t *testing.T) {
 	current := FSMState("idle\"state")
 	event := FSMEvent("start|now")
-	machine := NewFSM[testPayload]("test", current)
-	machine.SetTransitions(NewTransitionItem[testPayload](event, current, "running state", Handler[testPayload]{}))
+	machine := NewFSM("test", current, &testPayload{})
+	machine.SetTransitions(NewTransitionItem[*testPayload](event, current, "running state", Handler[*testPayload]{}))
 
 	flow, err := machine.VisualizeForMermaidWithGraphType(FlowChart)
 	if err != nil {
@@ -45,7 +45,7 @@ func TestMermaidUsesStableIDsAndEscapedLabels(t *testing.T) {
 }
 
 func TestVisualizeMermaidTruncatesAndReportsFileErrors(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	outputPath := filepath.Join(t.TempDir(), "fsm.md")
 	if err := os.WriteFile(outputPath, []byte(strings.Repeat("x", 4096)), 0o644); err != nil {
 		t.Fatal(err)

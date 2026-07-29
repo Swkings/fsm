@@ -6,16 +6,16 @@ type Payload struct {
 	// TODO: your payload
 }
 
-func (p Payload) JSON() ([]byte, error) {
+func (p *Payload) JSON() ([]byte, error) {
 	return json.Marshal(p)
 }
 
-func (p Payload) DisplayName() string {
+func (p *Payload) DisplayName() string {
 	// TODO: your DisplayName
 	return "DisplayName"
 }
 
-func (p Payload) Category() string {
+func (p *Payload) Category() string {
 	// TODO: your category
 	return "fsm/category"
 }

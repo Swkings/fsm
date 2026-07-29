@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 
@@ -120,13 +121,13 @@ func NewTransitionItem[T PayloadT](
 }
 
 type (
-	// PayloadT 是业务数据类型
+	// PayloadT 是业务数据类型。业务代码通常将 T 声明为 *Payload，
+	// 以便 Handler 和调用方共享并修改同一份载荷。
 	PayloadT interface {
 		JSON() ([]byte, error)
 		DisplayName() string
 		Category() string
 	}
-
 	// Actor 是 Handler 各执行阶段的函数类型，可通过 FSM 访问状态机和业务载荷。
 	Actor[T PayloadT] func(*FSM[T], ...any) error
 
@@ -173,8 +174,8 @@ type (
 		handlers map[EventStateKey]Handler[T]
 		// eventSearch 反向索引每个状态下允许处理的事件列表。
 		eventSearch map[FSMState][]FSMEvent
-		// Payload 是与状态机绑定的业务数据；未传入载荷时为 nil。
-		Payload *T
+		// Payload 是与状态机绑定的业务数据。
+		Payload T
 		// stateLock 保护运行状态、转移追踪标识和处理中的事件。
 		stateLock sync.RWMutex
 		// eventLock 保证同一个状态机实例同一时间只处理一个事件。
@@ -191,12 +192,14 @@ type (
 		runtimeObserverLock sync.RWMutex
 		// runtimeObservers 在事件完成后接收 trace 或快照更新通知。
 		runtimeObservers map[string]func(*TransitionTrace)
+		// persistence 保存可选的 FSM 持久化绑定；具体后端由 store 包提供。
+		persistence persistenceBinding
 	}
 )
 
 // NewFSM 创建状态机实例，并将 currentState 初始化为 initState。
-// payloads 是可选参数；传入多个值时只使用第一个，未传入时 Payload 为 nil。
-func NewFSM[T PayloadT](fsmName FSMName, initState FSMState, payloads ...*T) *FSM[T] {
+// payload 必须在创建时传入；业务代码应传入 &Payload{}，返回值类型为 *FSM[*Payload]。
+func NewFSM[T PayloadT](fsmName FSMName, initState FSMState, payload T) *FSM[T] {
 	fsm := &FSM[T]{
 		InstanceID:        uuid.NewString(),
 		TtId:              uuid.NewString(),
@@ -211,13 +214,7 @@ func NewFSM[T PayloadT](fsmName FSMName, initState FSMState, payloads ...*T) *FS
 		eventSearch:       make(map[FSMState][]FSMEvent),
 		eventQueue:        newEventQueue(),
 		runtimeObservers:  make(map[string]func(*TransitionTrace)),
-		Payload: func() *T {
-			if len(payloads) > 0 {
-				return payloads[0]
-			}
-
-			return nil
-		}(),
+		Payload:           payload,
 	}
 
 	return fsm
@@ -277,8 +274,8 @@ func (fsm *FSM[T]) GetEventUnderState(state FSMState) []FSMEvent {
 }
 
 // SetPayload 在状态锁保护下替换状态机绑定的业务载荷并返回 FSM，以便链式调用。
-// Payload 指向的业务对象仍由调用方负责同步；Handler 失败时不会自动回滚其内部修改。
-func (fsm *FSM[T]) SetPayload(payload *T) *FSM[T] {
+// 当 T 本身是指针类型时，其指向的业务对象仍由调用方负责同步；Handler 失败时不会自动回滚业务修改。
+func (fsm *FSM[T]) SetPayload(payload T) *FSM[T] {
 	fsm.stateLock.Lock()
 	defer fsm.notifyRuntimeObservers(nil)
 	defer fsm.stateLock.Unlock()
@@ -328,10 +325,10 @@ func (fsm *FSM[T]) Metadata() FSMMetadata {
 	payload := fsm.Payload
 	fsm.stateLock.RUnlock()
 
-	if payload == nil {
+	if isNilPayload(payload) {
 		return metadata
 	}
-	payloadJSON, err := (*payload).JSON()
+	payloadJSON, err := payload.JSON()
 	if err != nil {
 		metadata.PayloadError = err.Error()
 		return metadata
@@ -345,6 +342,19 @@ func (fsm *FSM[T]) Metadata() FSMMetadata {
 	}
 	metadata.Payload = append(json.RawMessage(nil), payloadJSON...)
 	return metadata
+}
+
+func isNilPayload[T PayloadT](payload T) bool {
+	value := reflect.ValueOf(payload)
+	if !value.IsValid() {
+		return true
+	}
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 // GetEventContext 返回当前事件的 context，供 Handler 监听提交方取消信号。
@@ -421,7 +431,11 @@ func (fsm *FSM[T]) ProcessEventWithContext(ctx context.Context, event FSMEvent, 
 // processEventLocked 在调用方已经取得事件执行权后完成转移。
 func (fsm *FSM[T]) processEventLocked(ctx context.Context, event FSMEvent, params ...any) (TransitionTrace, error) {
 	trace, err := fsm.processEventLockedCore(ctx, event, params...)
+	persistErr := fsm.persistTrace(context.Background(), trace)
 	fsm.notifyRuntimeObservers(&trace)
+	if err == nil && persistErr != nil {
+		return trace, persistErr
+	}
 	return trace, err
 }
 

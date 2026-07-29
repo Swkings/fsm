@@ -77,12 +77,12 @@ func (fsm *FSM[T]) VisualizationRegistrationConfig() visualization.RegistrationC
 	fsm.stateLock.RLock()
 	payload := fsm.Payload
 	fsm.stateLock.RUnlock()
-	if payload == nil {
+	if isNilPayload(payload) {
 		return visualization.RegistrationConfig{}
 	}
 	return visualization.RegistrationConfig{
-		DisplayName: (*payload).DisplayName(),
-		Path:        (*payload).Category(),
+		DisplayName: payload.DisplayName(),
+		Path:        payload.Category(),
 	}
 }
 

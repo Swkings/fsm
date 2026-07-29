@@ -18,9 +18,9 @@ type doorPayload struct {
 	OpenCount int    `json:"openCount"`
 }
 
-func (p doorPayload) JSON() ([]byte, error) { return json.Marshal(p) }
-func (p doorPayload) DisplayName() string   { return "Warehouse Door" }
-func (p doorPayload) Category() string      { return "warehouse/doors" }
+func (p *doorPayload) JSON() ([]byte, error) { return json.Marshal(p) }
+func (p *doorPayload) DisplayName() string   { return "Warehouse Door" }
+func (p *doorPayload) Category() string      { return "warehouse/doors" }
 
 // externalWorker 不依赖 fsm.FSM，只需直接实现 visualization.Client。
 type externalWorker struct {
@@ -70,14 +70,14 @@ func main() {
 	defer visualization.ShutdownClientServer(context.Background())
 
 	doorData := &doorPayload{Location: "warehouse"}
-	door := fsm.NewFSM[doorPayload]("door", "closed", doorData)
+	door := fsm.NewFSM("door", "closed", doorData)
 	defer door.Close()
 	door.SetTransitions(
-		fsm.NewTransitionItem("open", "closed", "opened", fsm.Handler[doorPayload]{Handler: func(machine *fsm.FSM[doorPayload], _ ...any) error {
+		fsm.NewTransitionItem("open", "closed", "opened", fsm.Handler[*doorPayload]{Handler: func(machine *fsm.FSM[*doorPayload], _ ...any) error {
 			machine.Payload.OpenCount++
 			return nil
 		}}),
-		fsm.NewTransitionItem[doorPayload]("close", "opened", "closed", fsm.Handler[doorPayload]{}),
+		fsm.NewTransitionItem[*doorPayload]("close", "opened", "closed", fsm.Handler[*doorPayload]{}),
 	)
 	doorRegistration, err := visualization.RegisterClient(context.Background(), door)
 	if err != nil {
@@ -101,7 +101,7 @@ func main() {
 	<-ctx.Done()
 }
 
-func generateEvents(ctx context.Context, door *fsm.FSM[doorPayload], worker *externalWorker) {
+func generateEvents(ctx context.Context, door *fsm.FSM[*doorPayload], worker *externalWorker) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	doorEvent := fsm.FSMEvent("open")

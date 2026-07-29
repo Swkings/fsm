@@ -10,8 +10,8 @@ import (
 
 {{range .HandleItemList -}}
 // GetHandler_s_{{.Transition.FromName}}_e_{{.Transition.EventName}} returns the handler for this transition.
-func GetHandler_s_{{.Transition.FromName}}_e_{{.Transition.EventName}}() fsm.Handler[types.Payload] {
-	return fsm.Handler[types.Payload]{
+func GetHandler_s_{{.Transition.FromName}}_e_{{.Transition.EventName}}() fsm.Handler[*types.Payload] {
+	return fsm.Handler[*types.Payload]{
 		BeforeHandler: _Before_s_{{.Transition.FromName}}_e_{{.Transition.EventName}},
 		Handler:       _In_s_{{.Transition.FromName}}_e_{{.Transition.EventName}},
 		AfterHandler:  _After_s_{{.Transition.FromName}}_e_{{.Transition.EventName}},

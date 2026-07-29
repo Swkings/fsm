@@ -15,9 +15,9 @@ type payload struct {
 	order []string
 }
 
-func (p payload) JSON() ([]byte, error) { return json.Marshal(p.order) }
-func (p payload) DisplayName() string   { return "" }
-func (p payload) Category() string      { return "" }
+func (p *payload) JSON() ([]byte, error) { return json.Marshal(p.order) }
+func (p *payload) DisplayName() string   { return "" }
+func (p *payload) Category() string      { return "" }
 
 func (p *payload) append(event string) {
 	p.mu.Lock()
@@ -35,14 +35,14 @@ func main() {
 	data := &payload{
 		mu: &sync.Mutex{},
 	}
-	machine := fsm.NewFSM[payload]("async-demo", "idle", data)
+	machine := fsm.NewFSM("async-demo", "idle", data)
 	defer machine.Close()
 
 	blockStarted := make(chan struct{})
 	releaseBlock := make(chan struct{})
 	fireDone := make(chan struct{})
 	machine.SetTransitions(
-		fsm.NewTransitionItem("direct", "idle", "idle", fsm.Handler[payload]{Handler: func(machine *fsm.FSM[payload], _ ...any) error {
+		fsm.NewTransitionItem("direct", "idle", "idle", fsm.Handler[*payload]{Handler: func(machine *fsm.FSM[*payload], _ ...any) error {
 			close(blockStarted)
 			<-releaseBlock
 			machine.Payload.append("direct")
@@ -51,7 +51,7 @@ func main() {
 		fsm.NewTransitionItem("high", "idle", "idle", eventHandler("high")),
 		fsm.NewTransitionItem("low", "idle", "idle", eventHandler("low")),
 		fsm.NewTransitionItem("cancel", "idle", "idle", eventHandler("cancel")),
-		fsm.NewTransitionItem("fire", "idle", "idle", fsm.Handler[payload]{Handler: func(_ *fsm.FSM[payload], _ ...any) error {
+		fsm.NewTransitionItem("fire", "idle", "idle", fsm.Handler[*payload]{Handler: func(_ *fsm.FSM[*payload], _ ...any) error {
 			close(fireDone)
 			return nil
 		}}),
@@ -89,7 +89,7 @@ func main() {
 
 	highResult := mustNotify(highNotify, waitContext)
 	lowResult := mustNotify(lowNotify, waitContext)
-	fmt.Printf("order=%v high=%s low=%s\n", data.snapshot(), highResult.Status, lowResult.Status)
+	fmt.Printf("order=%v high=%s low=%s\n", machine.Payload.snapshot(), highResult.Status, lowResult.Status)
 
 	cancelContext, cancelEvent := context.WithCancel(context.Background())
 	cancelNotify := make(chan fsm.AsyncEventResult, 1)
@@ -106,8 +106,8 @@ func main() {
 	fmt.Printf("fire-and-forget receipt=%v\n", fireReceipt)
 }
 
-func eventHandler(name string) fsm.Handler[payload] {
-	return fsm.Handler[payload]{Handler: func(machine *fsm.FSM[payload], _ ...any) error {
+func eventHandler(name string) fsm.Handler[*payload] {
+	return fsm.Handler[*payload]{Handler: func(machine *fsm.FSM[*payload], _ ...any) error {
 		if err := machine.GetEventContext().Err(); err != nil {
 			return err
 		}
@@ -116,7 +116,7 @@ func eventHandler(name string) fsm.Handler[payload] {
 	}}
 }
 
-func mustSubmit(machine *fsm.FSM[payload], event fsm.FSMEvent, options ...fsm.AsyncEventOption) *fsm.AsyncEventReceipt {
+func mustSubmit(machine *fsm.FSM[*payload], event fsm.FSMEvent, options ...fsm.AsyncEventOption) *fsm.AsyncEventReceipt {
 	receipt, err := machine.SubmitEvent(event, options...)
 	if err != nil {
 		panic(err)

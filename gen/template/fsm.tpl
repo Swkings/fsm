@@ -9,8 +9,8 @@ import (
 	"{{.FSMData.PackageDir}}/{{.FSMData.Package}}/types"
 )
 
-func NewFSM{{.FSMData.FSM.Name}}() *fsm.FSM[types.Payload] {
-	f := fsm.NewFSM[types.Payload](types.FSMName{{.FSMData.FSM.Name}}, types.StateEnum.{{.FSMData.FSM.InitialName}})
+func NewFSM{{.FSMData.FSM.Name}}(payload *types.Payload) *fsm.FSM[*types.Payload] {
+	f := fsm.NewFSM[*types.Payload](types.FSMName{{.FSMData.FSM.Name}}, types.StateEnum.{{.FSMData.FSM.InitialName}}, payload)
 	f.Describe = {{printf "%q" .FSMData.FSM.Describe}}
 
 	f.SetTransitions(

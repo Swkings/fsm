@@ -14,25 +14,37 @@ type testPayload struct {
 	Value int
 }
 
-func (payload testPayload) JSON() ([]byte, error) { return json.Marshal(payload) }
-func (payload testPayload) DisplayName() string   { return "" }
-func (payload testPayload) Category() string      { return "" }
+func (payload *testPayload) JSON() ([]byte, error) { return json.Marshal(payload) }
+func (payload *testPayload) DisplayName() string   { return "" }
+func (payload *testPayload) Category() string      { return "" }
+
+func TestNewFSMKeepsMutablePayloadPointer(t *testing.T) {
+	payload := &testPayload{Value: 1}
+	machine := NewFSM("test", "idle", payload)
+	if machine.Payload != payload {
+		t.Fatal("NewFSM copied or replaced the supplied payload pointer")
+	}
+	machine.Payload.Value = 2
+	if payload.Value != 2 {
+		t.Fatalf("payload value = %d, want shared mutation 2", payload.Value)
+	}
+}
 
 func TestProcessEventRunsHandlerStagesInOrder(t *testing.T) {
 	payload := &testPayload{}
-	machine := NewFSM[testPayload]("test", "idle", payload)
+	machine := NewFSM("test", "idle", payload)
 	var stages []string
-	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[testPayload]{
-		BeforeHandler: func(_ *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
+		BeforeHandler: func(_ *FSM[*testPayload], _ ...any) error {
 			stages = append(stages, "before")
 			return nil
 		},
-		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			stages = append(stages, "handler")
 			fsm.Payload.Value++
 			return nil
 		},
-		AfterHandler: func(_ *FSM[testPayload], _ ...any) error {
+		AfterHandler: func(_ *FSM[*testPayload], _ ...any) error {
 			stages = append(stages, "after")
 			return nil
 		},
@@ -55,7 +67,7 @@ func TestProcessEventRunsHandlerStagesInOrder(t *testing.T) {
 
 func TestMetadataReturnsCurrentFSMSnapshot(t *testing.T) {
 	payload := &testPayload{Value: 3}
-	machine := NewFSM[testPayload]("test", "idle", payload)
+	machine := NewFSM("test", "idle", payload)
 	metadata := machine.Metadata()
 
 	if metadata.InstanceID != machine.InstanceID || metadata.TransitionID != machine.TtId ||
@@ -74,10 +86,10 @@ func TestMetadataReturnsCurrentFSMSnapshot(t *testing.T) {
 
 func TestProcessEventCapturesEntryAndExitMetadata(t *testing.T) {
 	payload := &testPayload{Value: 3}
-	machine := NewFSM[testPayload]("test", "idle", payload)
+	machine := NewFSM("test", "idle", payload)
 	entryTransitionID := machine.TtId
-	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[testPayload]{
-		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
+		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			fsm.Payload.Value += 7
 			return nil
 		},
@@ -114,10 +126,10 @@ func TestProcessEventCapturesEntryAndExitMetadata(t *testing.T) {
 
 func TestProcessEventCapturesExitMetadataOnFailure(t *testing.T) {
 	payload := &testPayload{Value: 1}
-	machine := NewFSM[testPayload]("test", "idle", payload)
+	machine := NewFSM("test", "idle", payload)
 	wantErr := errors.New("handler failed")
-	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[testPayload]{
-		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
+		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			fsm.Payload.Value = 2
 			return wantErr
 		},
@@ -144,18 +156,18 @@ func TestProcessEventCapturesExitMetadataOnFailure(t *testing.T) {
 
 func TestProcessEventPassesParamsToActorStages(t *testing.T) {
 	payload := &testPayload{}
-	machine := NewFSM[testPayload]("test", "idle", payload)
+	machine := NewFSM("test", "idle", payload)
 	var received []string
-	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[testPayload]{
-		BeforeHandler: func(_ *FSM[testPayload], params ...any) error {
+	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
+		BeforeHandler: func(_ *FSM[*testPayload], params ...any) error {
 			received = append(received, fmt.Sprintf("before:%s:%d", params[0], params[1]))
 			return nil
 		},
-		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			fsm.Payload.Value++
 			return nil
 		},
-		AfterHandler: func(_ *FSM[testPayload], params ...any) error {
+		AfterHandler: func(_ *FSM[*testPayload], params ...any) error {
 			received = append(received, fmt.Sprintf("after:%s:%d", params[0], params[1]))
 			return nil
 		},
@@ -167,8 +179,8 @@ func TestProcessEventPassesParamsToActorStages(t *testing.T) {
 	if got := strings.Join(received, ","); got != "before:attack:25,after:attack:25" {
 		t.Fatalf("received params = %q", got)
 	}
-	if payload.Value != 1 {
-		t.Fatalf("payload value = %d, want 1", payload.Value)
+	if machine.Payload.Value != 1 {
+		t.Fatalf("payload value = %d, want 1", machine.Payload.Value)
 	}
 }
 
@@ -188,18 +200,18 @@ func TestProcessEventPropagatesEveryHandlerStageError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			machine := NewFSM[testPayload]("test", "idle")
+			machine := NewFSM("test", "idle", &testPayload{})
 			var stages []string
-			machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[testPayload]{
-				BeforeHandler: func(_ *FSM[testPayload], _ ...any) error {
+			machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
+				BeforeHandler: func(_ *FSM[*testPayload], _ ...any) error {
 					stages = append(stages, "before")
 					return tt.beforeError
 				},
-				Handler: func(_ *FSM[testPayload], _ ...any) error {
+				Handler: func(_ *FSM[*testPayload], _ ...any) error {
 					stages = append(stages, "handler")
 					return tt.handlerErr
 				},
-				AfterHandler: func(_ *FSM[testPayload], _ ...any) error {
+				AfterHandler: func(_ *FSM[*testPayload], _ ...any) error {
 					stages = append(stages, "after")
 					return tt.afterError
 				},
@@ -226,7 +238,7 @@ func TestProcessEventPropagatesEveryHandlerStageError(t *testing.T) {
 }
 
 func TestInvalidEventRecordsErrorAndCleansEnvironment(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	trace, err := machine.ProcessEvent("missing")
 	if err == nil {
 		t.Fatal("ProcessEvent() error = nil")
@@ -240,9 +252,9 @@ func TestInvalidEventRecordsErrorAndCleansEnvironment(t *testing.T) {
 }
 
 func TestSetTransitionsValidatesBatchBeforeCommit(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
-	first := NewTransitionItem[testPayload]("start", "idle", "running", Handler[testPayload]{})
-	second := NewTransitionItem[testPayload]("start", "idle", "done", Handler[testPayload]{})
+	machine := NewFSM("test", "idle", &testPayload{})
+	first := NewTransitionItem[*testPayload]("start", "idle", "running", Handler[*testPayload]{})
+	second := NewTransitionItem[*testPayload]("start", "idle", "done", Handler[*testPayload]{})
 
 	panicValue := capturePanic(func() { machine.SetTransitions(first, second) })
 	if panicValue == nil {
@@ -257,8 +269,8 @@ func TestSetTransitionsValidatesBatchBeforeCommit(t *testing.T) {
 }
 
 func TestGetEventUnderStateReturnsCopy(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
-	machine.SetTransitions(NewTransitionItem[testPayload]("start", "idle", "running", Handler[testPayload]{}))
+	machine := NewFSM("test", "idle", &testPayload{})
+	machine.SetTransitions(NewTransitionItem[*testPayload]("start", "idle", "running", Handler[*testPayload]{}))
 
 	events := machine.GetEventUnderState("idle")
 	events[0] = "changed"
@@ -268,10 +280,10 @@ func TestGetEventUnderStateReturnsCopy(t *testing.T) {
 }
 
 func TestNestedProcessEventReturnsBusyInsteadOfDeadlocking(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
+	machine := NewFSM("test", "idle", &testPayload{})
 	var nestedErr error
-	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[testPayload]{
-		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
+		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			_, nestedErr = fsm.ProcessEvent("nested")
 			return nil
 		},
@@ -286,9 +298,9 @@ func TestNestedProcessEventReturnsBusyInsteadOfDeadlocking(t *testing.T) {
 }
 
 func TestStateChangeDuringHandlerRejectsCommit(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
-	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[testPayload]{
-		Handler: func(fsm *FSM[testPayload], _ ...any) error {
+	machine := NewFSM("test", "idle", &testPayload{})
+	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
+		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			fsm.SetCurrentState("external")
 			return nil
 		},
@@ -304,8 +316,8 @@ func TestStateChangeDuringHandlerRejectsCommit(t *testing.T) {
 }
 
 func TestConcurrentConfigurationProcessingAndVisualization(t *testing.T) {
-	machine := NewFSM[testPayload]("test", "idle")
-	machine.SetTransitions(NewTransitionItem[testPayload]("tick", "idle", "idle", Handler[testPayload]{}))
+	machine := NewFSM("test", "idle", &testPayload{})
+	machine.SetTransitions(NewTransitionItem[*testPayload]("tick", "idle", "idle", Handler[*testPayload]{}))
 
 	var wg sync.WaitGroup
 	wg.Add(4)
@@ -313,7 +325,7 @@ func TestConcurrentConfigurationProcessingAndVisualization(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
 			event := FSMEvent(fmt.Sprintf("event-%d", i))
-			machine.SetTransitions(NewTransitionItem[testPayload](event, "idle", "idle", Handler[testPayload]{}))
+			machine.SetTransitions(NewTransitionItem[*testPayload](event, "idle", "idle", Handler[*testPayload]{}))
 		}
 	}()
 	go func() {

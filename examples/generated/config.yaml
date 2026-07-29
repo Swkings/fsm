@@ -1,8 +1,14 @@
+FSM:
+  Name: PlayerAction
+  InitialState: IDLE
+  StoreKey: generated/player
+
+Store:
+  JSONL:
+    Directory: data/fsm
+    Filename: generated-player.jsonl
+
 Visualization:
   ServerAddress: 127.0.0.1:5005
   TraceLimit: 50
   PathPrefix: examples/generated
-  Replay:
-    JSONL:
-      Directory: data/replay
-      Filename: generated-player.jsonl

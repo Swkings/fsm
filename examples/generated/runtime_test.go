@@ -17,6 +17,12 @@ func TestGeneratedExampleLoadsVisualizationConfig(t *testing.T) {
 		config.Visualization.PathPrefix != "examples/generated" {
 		t.Fatalf("visualization config = %+v", config.Visualization)
 	}
+	if config.Store.JSONL.Directory != "data/fsm" || config.Store.JSONL.Filename != "generated-player.jsonl" {
+		t.Fatalf("store config = %+v", config.Store)
+	}
+	if config.FSM.Name != "PlayerAction" || config.FSM.InitialState != "IDLE" || config.FSM.StoreKey != "generated/player" {
+		t.Fatalf("fsm config = %+v", config.FSM)
+	}
 }
 
 func TestGeneratedPayloadProvidesVisualizationMetadata(t *testing.T) {

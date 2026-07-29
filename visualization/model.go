@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/swkings/fsm/config"
 )
 
 var (
@@ -43,14 +45,8 @@ const (
 	ModePush Mode = "push"
 )
 
-// ServerConfig 是 Server 的全部启动配置。零值使用安全默认值。
-type ServerConfig struct {
-	// Address 是 Start 使用的监听地址，默认 127.0.0.1:0。
-	Address string
-	// TraceLimit 是每个实例保留的最近 trace 数量，默认 100。
-	TraceLimit int
-	Replay     ReplayStorageConfig `json:",optional"`
-}
+// ServerConfig 是非全局 Server 配置的兼容别名，实际定义位于 config 包。
+type ServerConfig = config.VisualizationServer
 
 // RegistrationConfig 描述本次注册如何挂载和采集客户端。
 // 配置属于 Registration 生命周期，不应保存在 FSM 客户端内部。

@@ -4,78 +4,42 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/swkings/fsm/config"
+	"github.com/swkings/fsm/store"
 )
 
-func TestReplayJSONLLifecycleAndDuplicateSuppression(t *testing.T) {
-	hub := newReplayHub(ReplayStorageConfig{
-		JSONL: ReplayJSONLConfig{
-			Directory: t.TempDir(),
-			Filename:  "transitions.jsonl",
-		},
-	})
-	defer hub.close()
-
-	snapshot := Snapshot{
-		Descriptor: Descriptor{
-			ID:          "player-1",
-			Name:        "player",
-			DisplayName: "Player One",
-			Path:        "examples/player",
-		},
-		TransitionID:  "transition-1",
-		CurrentState:  "RUN",
-		PreviousState: "IDLE",
-		PreviousEvent: "RUN",
-		States:        []string{"IDLE", "RUN"},
-		Transitions: []TransitionSnapshot{
-			{FromState: "IDLE", Event: "RUN", ToState: "RUN"},
-		},
-		UpdatedAt: time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC),
-	}
-
-	ctx := context.Background()
-	if err := hub.save(ctx, snapshot); err != nil {
-		t.Fatalf("save replay snapshot: %v", err)
-	}
-	if err := hub.save(ctx, snapshot); err != nil {
-		t.Fatalf("save duplicate replay snapshot: %v", err)
-	}
-
-	records, err := hub.list(ctx, "primary", "player-1", 10)
+func TestReplayReadsFSMStoreWithoutOwningPersistence(t *testing.T) {
+	backend, err := store.New(config.Store{JSONL: config.JSONL{Directory: t.TempDir(), Filename: "fsm.jsonl"}})
 	if err != nil {
-		t.Fatalf("list replay records: %v", err)
+		t.Fatalf("create store: %v", err)
 	}
-	if len(records) != 1 {
-		t.Fatalf("expected one deduplicated replay record, got %d", len(records))
+	defer backend.Close()
+	record := store.Record{
+		ID: "record-1", Key: "player-1", DisplayName: "Player One", Category: "examples/player",
+		RecordedAt: time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC), Success: true,
+		Metadata:    store.Metadata{InstanceID: "instance-1", TransitionID: "transition-1", Name: "player", PreviousState: "IDLE", PreviousEvent: "RUN", CurrentState: "RUN", Payload: []byte(`{"health":100}`)},
+		Transitions: []store.Transition{{FromState: "IDLE", Event: "RUN", ToState: "RUN"}},
+		Trace:       store.Trace{TransitionID: "transition-1", FromState: "IDLE", Event: "RUN", ToState: "RUN", FinalState: "RUN", Success: true},
 	}
-	record, err := hub.get(ctx, "primary", records[0].ID)
+	if err = backend.Save(context.Background(), record); err != nil {
+		t.Fatalf("save record: %v", err)
+	}
+
+	hub := newReplayHub()
+	defer hub.close()
+	if err = hub.register("primary", "FSM Store", backend, true, false); err != nil {
+		t.Fatalf("register replay store: %v", err)
+	}
+	records, err := hub.list(context.Background(), "primary", "player-1", 10)
+	if err != nil || len(records) != 1 {
+		t.Fatalf("list replay records: records=%+v err=%v", records, err)
+	}
+	replay, err := hub.get(context.Background(), "primary", record.ID)
 	if err != nil {
 		t.Fatalf("get replay record: %v", err)
 	}
-	if record.Snapshot.CurrentState != "RUN" || record.Snapshot.PreviousEvent != "RUN" {
-		t.Fatalf("unexpected replay snapshot: %#v", record.Snapshot)
-	}
-
-	if err := hub.remove(ctx, "primary", record.ID); err != nil {
-		t.Fatalf("remove replay record: %v", err)
-	}
-	records, err = hub.list(ctx, "primary", "player-1", 10)
-	if err != nil {
-		t.Fatalf("list replay records after remove: %v", err)
-	}
-	if len(records) != 0 {
-		t.Fatalf("expected replay record to be removed, got %d", len(records))
-	}
-}
-
-func TestReplayDriverDefaults(t *testing.T) {
-	if got := replayDriver(ReplayStorageConfig{}); got != ReplayDriverJSONL {
-		t.Fatalf("empty replay config should default to jsonl, got %q", got)
-	}
-	if got := replayDriver(ReplayStorageConfig{MySQL: ReplayMySQLConfig{DSN: "dsn"}}); got != ReplayDriverMySQL {
-		t.Fatalf("mysql dsn should select mysql, got %q", got)
-	}
-	if got := replayDriver(ReplayStorageConfig{Redis: ReplayRedisConfig{Address: "localhost:6379"}}); got != ReplayDriverRedis {
-		t.Fatalf("redis address should select redis, got %q", got)
+	if replay.Snapshot.CurrentState != "RUN" || replay.Snapshot.PreviousEvent != "RUN" || len(replay.Snapshot.Transitions) != 1 {
+		t.Fatalf("unexpected replay snapshot: %+v", replay.Snapshot)
 	}
 }

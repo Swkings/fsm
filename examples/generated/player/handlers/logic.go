@@ -36,11 +36,7 @@ var eventDescriptions = map[fsm.FSMEvent]string{
 
 // handleTransition 是示例业务逻辑入口。每个由生成器创建的 Handler 文件
 // 仍然独立绑定一条转移，只把重复的数据更新委托给这个辅助函数。
-func handleTransition(machine *fsm.FSM[types.Payload], event fsm.FSMEvent) error {
-	if machine.Payload == nil {
-		return errors.New("player payload is nil")
-	}
-
+func handleTransition(machine *fsm.FSM[*types.Payload], event fsm.FSMEvent) error {
 	payload := machine.Payload
 	fromState := machine.GetCurrentState()
 	payload.LastEvent = event.String()
@@ -103,7 +99,7 @@ func handleTransition(machine *fsm.FSM[types.Payload], event fsm.FSMEvent) error
 
 // handleAttackTransition 校验攻击事件参数，完成状态业务更新后扣除目标指定血量。
 func handleAttackTransition(
-	machine *fsm.FSM[types.Payload],
+	machine *fsm.FSM[*types.Payload],
 	event fsm.FSMEvent,
 	params ...any,
 ) error {
