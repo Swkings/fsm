@@ -64,13 +64,13 @@ function Sidebar({ fsms, selected, onSelect, collapsed, onToggle }) {
   }, [fsms, query])
   const tree = useMemo(() => buildFolderTree(visible), [visible])
   return (
-    <aside>
+    <aside className="left-sidebar">
       <div className="aside-heading">
         <span className="aside-title">Machines</span>
         <span className="count-pill">{fsms.length} registered</span>
         <button id="sidebarToggle" className="sidebar-toggle" type="button" aria-label={`${collapsed ? '展开' : '折叠'}左侧栏`} title={`${collapsed ? '展开' : '折叠'}左侧栏`} aria-expanded={!collapsed} onClick={onToggle}>
-          <svg className="sidebar-collapse-icon" viewBox="0 0 24 24"><path d="M7 4v16M16 8l-4 4 4 4" /></svg>
-          <svg className="sidebar-expand-icon" viewBox="0 0 24 24"><path d="M7 4v16M12 8l4 4-4 4" /></svg>
+          <svg className="left-sidebar-open-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><rect className="sidebar-pane-fill" x="2.5" y="3.5" width="3.5" height="9" rx=".75"/><path d="M6.5 3v10"/></svg>
+          <svg className="left-sidebar-closed-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.5 3v10"/></svg>
         </button>
       </div>
       <div className="tree-toolbar"><input className="tree-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 FSM、状态或路径" aria-label="搜索 FSM" /></div>
@@ -83,18 +83,14 @@ function Sidebar({ fsms, selected, onSelect, collapsed, onToggle }) {
   )
 }
 
-function PanelClose({ label, onClick }) {
-  return <button className="panel-close" type="button" aria-label={`关闭 ${label}`} title={`关闭 ${label}`} onClick={onClick}><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
-}
-function ActiveEventPanel({ item, open, onClose }) {
-  if (!open) return null
+function ActiveEventPanel({ item, open, onToggle }) {
   const available = [...(item.availableTransitions || (item.transitions || []).filter((edge) => edge.fromState === item.currentState))]
     .sort((left, right) => String(left.event).localeCompare(String(right.event)) || String(left.toState).localeCompare(String(right.toState)))
   const currentState = String(item.currentState || 'empty')
   return (
-    <section className="monitor-panel available-panel" aria-labelledby="activeEventTitle">
-      <div className="monitor-panel-head"><strong id="activeEventTitle">Active Event</strong><span className="panel-summary">{available.length} events</span><PanelClose label="Active Event" onClick={onClose} /></div>
-      <div className="panel-body"><div className="active-event-tree" role="tree" aria-label={`${currentState} 可接收事件`}>
+    <section className={"monitor-panel available-panel" + (open ? "" : " collapsed")} aria-labelledby="activeEventTitle">
+      <div className="monitor-panel-head"><strong id="activeEventTitle">Active Event</strong><span className="panel-summary">{available.length} events</span><button className="active-event-toggle" type="button" aria-label={open ? "折叠 Active Event" : "展开 Active Event"} title={open ? "折叠 Active Event" : "展开 Active Event"} aria-expanded={open} aria-controls="activeEventBody" onClick={() => onToggle(!open)}><svg className="active-event-collapse-icon" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6" /></svg><svg className="active-event-expand-icon" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg></button></div>
+      <div id="activeEventBody" className="panel-body"><div className="active-event-tree" role="tree" aria-label={`${currentState} 可接收事件`}>
         <div className="active-tree-root" role="treeitem" aria-expanded={available.length > 0}>
           <span className="active-tree-root-dot" aria-hidden="true" />
           <strong>{currentState}</strong>
@@ -119,25 +115,35 @@ function ActiveEventPanel({ item, open, onClose }) {
     </section>
   )
 }
-function PayloadPanel({ item, open, onClose }) {
-  if (!open) return null
-  const summary = `${item.currentState || 'empty'} · ${item.mode || 'push'}`
+function PayloadContent({ item }) {
   return (
-    <section className="monitor-panel payload-panel" aria-labelledby="payloadTitle">
-      <div className="monitor-panel-head"><strong id="payloadTitle">Payload</strong><span className="panel-summary">{summary}</span><PanelClose label="Payload" onClick={onClose} /></div>
-      <div className="panel-body">
-        {item.payloadError && <div className="payload-error" style={{ display: 'block' }}>{String(item.payloadError)}</div>}
-        <pre>{JSON.stringify(item.payload === undefined ? null : item.payload, null, 2)}</pre>
-        <div className="meta">
-          <div><label>Transition ID</label><span>{item.transitionId}</span></div>
-          <div><label>Updated</label><span>{formatTime(item.updatedAt)}</span></div>
-          <div><label>Previous State</label><span>{item.previousState || '-'}</span></div>
-          <div><label>Previous Event</label><span>{item.previousEvent || '-'}</span></div>
-        </div>
+    <div id="payloadPanel" className="payload-content" aria-label="Payload">
+      <div className="meta payload-meta">
+        <div><label>Transition ID</label><span>{item.transitionId}</span></div>
+        <div><label>Updated</label><span>{formatTime(item.updatedAt)}</span></div>
+        <div><label>Previous State</label><span>{item.previousState || "-"}</span></div>
+        <div><label>Previous Event</label><span>{item.previousEvent || "-"}</span></div>
       </div>
-    </section>
+      {item.payloadError && <div className="payload-error" style={{ display: "block" }}>{String(item.payloadError)}</div>}
+      <pre className="payload-code"><code>{JSON.stringify(item.payload === undefined ? null : item.payload, null, 2)}</code></pre>
+    </div>
   )
 }
+function RightSidebar({ item, payloadOpen, onPayloadToggle }) {
+  return (
+    <aside className="right-sidebar" aria-label="FSM Inspector">
+      <nav className="right-sidebar-nav" aria-label="FSM Inspector 面板">
+        <button className={["inspector-tab", payloadOpen ? "active" : ""].filter(Boolean).join(" ")} type="button" disabled={!item} aria-controls="payloadPanel" aria-expanded={payloadOpen} onClick={() => onPayloadToggle(!payloadOpen)}>
+          <strong>Payload</strong>
+        </button>
+      </nav>
+      <div className="right-sidebar-content">
+        {!item ? <div className="right-sidebar-empty">选择 FSM 后查看 Payload</div> : payloadOpen ? <PayloadContent item={item} /> : <div className="right-sidebar-empty">点击 Payload 查看当前数据</div>}
+      </div>
+    </aside>
+  )
+}
+
 function TraceMetadata({ trace }) {
   const entry = trace.entryMetadata
   const exit = trace.exitMetadata
@@ -250,6 +256,7 @@ function App() {
   const [transparency, setTransparency] = useState(() => Number(stored('fsm-overlay-transparency', '85')))
   const [opacityOpen, setOpacityOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => stored('fsm-sidebar-collapsed', 'open') === 'collapsed')
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => stored("fsm-right-sidebar-collapsed", "open") === "collapsed")
   const [activeOpen, setActiveOpen] = useState(() => stored('fsm-monitor-panel:availablePanel', 'open') !== 'closed')
   const [payloadOpen, setPayloadOpen] = useState(() => stored('fsm-monitor-panel:payloadPanel', 'open') !== 'closed')
   const layoutRef = useRef(null)
@@ -273,9 +280,14 @@ function App() {
     remember('fsm-sidebar-collapsed', sidebarCollapsed ? 'collapsed' : 'open')
   }, [sidebarCollapsed])
   useEffect(() => {
+    document.body.classList.toggle("right-sidebar-collapsed", rightSidebarCollapsed)
+    remember("fsm-right-sidebar-collapsed", rightSidebarCollapsed ? "collapsed" : "open")
+  }, [rightSidebarCollapsed])
+  useEffect(() => {
     const value = Math.max(0, Math.min(100, Number(transparency) || 0))
     const opacity = 100 - value
     const root = document.documentElement
+    root.style.setProperty("--panel-opacity", (opacity / 100).toFixed(2))
     root.style.setProperty('--panel-alpha', `${opacity}%`)
     root.style.setProperty('--panel-detail-alpha', `${Math.round(opacity * 0.64)}%`)
     root.style.setProperty('--panel-blur', `${(opacity * 0.12).toFixed(1)}px`)
@@ -294,6 +306,7 @@ function App() {
     if (panel === 'availablePanel') setActiveOpen(value); else setPayloadOpen(value)
   }
   const current = fsms.find((item) => item.id === selected)
+  const currentPath = current ? "/" + [current.path, machineName(current)].filter(Boolean).join("/") : "/"
   const resizeStart = (event) => {
     if (matchMedia('(max-width: 1100px)').matches || sidebarCollapsed) return
     event.preventDefault()
@@ -316,28 +329,31 @@ function App() {
     <>
       <div ref={layoutRef} className="layout">
         <Sidebar fsms={fsms} selected={selected} onSelect={setSelected} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} />
-        <div id="sidebarResize" className="resize-handle" role="separator" aria-label="调整状态机列表宽度" aria-orientation="vertical" tabIndex="0" onPointerDown={resizeStart} onKeyDown={(event) => { if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return; event.preventDefault(); const currentWidth = layoutRef.current?.querySelector("aside")?.getBoundingClientRect().width || 288; const width = Math.max(190, currentWidth + (event.key === "ArrowLeft" ? -16 : 16)); document.documentElement.style.setProperty("--sidebar-width", `${width}px`); remember("fsm-sidebar-width", width) }} onDoubleClick={() => { document.documentElement.style.removeProperty('--sidebar-width'); remember('fsm-sidebar-width', '') }} />
-        <main className="workspace">
-          <header className="topbar">
+        <div id="sidebarResize" className="resize-handle" role="separator" aria-label="调整状态机列表宽度" aria-orientation="vertical" tabIndex="0" onPointerDown={resizeStart} onKeyDown={(event) => { if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return; event.preventDefault(); const currentWidth = layoutRef.current?.querySelector(".left-sidebar")?.getBoundingClientRect().width || 288; const width = Math.max(190, currentWidth + (event.key === "ArrowLeft" ? -16 : 16)); document.documentElement.style.setProperty("--sidebar-width", `${width}px`); remember("fsm-sidebar-width", width) }} onDoubleClick={() => { document.documentElement.style.removeProperty('--sidebar-width'); remember('fsm-sidebar-width', '') }} />
+        <header className="topbar">
+          <div className="topbar-current" title={currentPath}><span className="topbar-current-label">FSM</span><span className="topbar-current-path">{currentPath}</span></div>
+          <div className="topbar-actions">
             <div ref={opacityRef} className={`opacity-control${opacityOpen ? ' open' : ''}`}>
-              <button className="icon-button" type="button" aria-label={`浮层透明度 ${Math.round(transparency)}%`} title={`浮层透明度 ${Math.round(transparency)}%`} aria-expanded={opacityOpen} onClick={() => setOpacityOpen((value) => !value)}><svg viewBox="0 0 24 24"><path d="M12 3s5 6 5 10a5 5 0 0 1-10 0c0-4 5-10 5-10z"/><path d="M9 14.5c.7 1.3 1.7 2 3 2"/></svg></button>
-              <div className="opacity-popover" role="dialog" aria-label="浮层透明度"><div className="opacity-popover-head"><strong>浮层透明度</strong><span className="opacity-value">{Math.round(transparency)}%</span></div><input className="opacity-slider" type="range" min="0" max="100" step="1" value={transparency} onChange={(event) => setTransparency(Number(event.target.value))} aria-label="浮层透明度"/><div className="opacity-scale"><span>不透明</span><span>全透明</span></div></div>
+              <button className="icon-button" type="button" aria-label={`全局透明度 ${Math.round(transparency)}%`} title={`全局透明度 ${Math.round(transparency)}%`} aria-expanded={opacityOpen} onClick={() => setOpacityOpen((value) => !value)}><svg viewBox="0 0 24 24"><path d="M12 3s5 6 5 10a5 5 0 0 1-10 0c0-4 5-10 5-10z"/><path d="M9 14.5c.7 1.3 1.7 2 3 2"/></svg></button>
+              <div className="opacity-popover" role="dialog" aria-label="全局透明度"><div className="opacity-popover-head"><strong>全局透明度</strong><span className="opacity-value">{Math.round(transparency)}%</span></div><input className="opacity-slider" type="range" min="0" max="100" step="1" value={transparency} onChange={(event) => setTransparency(Number(event.target.value))} aria-label="全局透明度"/><div className="opacity-scale"><span>不透明</span><span>全透明</span></div></div>
             </div>
             <button id="themeToggle" className="icon-button" type="button" aria-label={`切换为${theme === 'dark' ? '浅色' : '深色'}主题`} title={`切换为${theme === 'dark' ? '浅色' : '深色'}主题`} onClick={() => setTheme((value) => value === 'light' ? 'dark' : 'light')}><svg className="theme-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg><svg className="theme-moon" viewBox="0 0 24 24"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7z"/></svg></button>
             <button id="discoveryToggle" className="icon-button" type="button" aria-label="打开设置" title="设置" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.86 1.86-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.6v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.88.34l-.06.06-1.86-1.86.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-1.5-1H5.9v-2.6H6a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06L8.96 6.6l.06.06A1.7 1.7 0 0 0 10.9 7a1.7 1.7 0 0 0 1-1.5v-.1h2.6v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.86 1.86-.06.06A1.7 1.7 0 0 0 18.9 10.4a1.7 1.7 0 0 0 1.5 1h.1V14h-.1a1.7 1.7 0 0 0-1 .6z"/></svg></button>
-          </header>
+            <button className="sidebar-toggle right-sidebar-toggle" type="button" aria-label={(rightSidebarCollapsed ? "展开" : "折叠") + "右侧栏"} title={(rightSidebarCollapsed ? "展开" : "折叠") + "右侧栏"} aria-expanded={!rightSidebarCollapsed} onClick={() => setRightSidebarCollapsed((value) => !value)}>
+              <svg className="right-sidebar-open-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><rect className="sidebar-pane-fill" x="10" y="3.5" width="3.5" height="9" rx=".75"/><path d="M9.5 3v10"/></svg>
+              <svg className="right-sidebar-closed-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M9.5 3v10"/></svg>
+            </button>
+          </div>
+        </header>
+        <main className="workspace">
           {!current ? <div className="empty"><div><strong>等待 FSM 注册</strong><span>注册完成后将在此显示状态图。</span></div></div> : <div className="content visible"><section className="graph-surface" aria-label="FSM 状态图画布">
             <StateGraph item={current} />
             {current.collectionError && <div className="collection-error" style={{ display: 'block' }}>{current.collectionError}</div>}
-            <nav className="detail-nav" aria-label="FSM 详情面板">
-              <button className={`detail-tab${activeOpen ? ' active' : ''}`} type="button" aria-controls="availablePanel" aria-expanded={activeOpen} onClick={() => setPanel('availablePanel', !activeOpen)}><strong>Active Event</strong><span className="panel-summary">{(current.availableTransitions || []).length}</span></button>
-              <button className={`detail-tab${payloadOpen ? ' active' : ''}`} type="button" aria-controls="payloadPanel" aria-expanded={payloadOpen} onClick={() => setPanel('payloadPanel', !payloadOpen)}><strong>Payload</strong><span className="panel-summary">{current.currentState || 'empty'} · {current.mode || 'push'}</span></button>
-            </nav>
-            <ActiveEventPanel item={current} open={activeOpen} onClose={() => setPanel('availablePanel', false)} />
-            <PayloadPanel item={current} open={payloadOpen} onClose={() => setPanel('payloadPanel', false)} />
+            <ActiveEventPanel item={current} open={activeOpen} onToggle={(value) => setPanel("availablePanel", value)} />
             <TracePanel traces={current.traces} />
           </section></div>}
         </main>
+        <RightSidebar item={current} payloadOpen={payloadOpen} onPayloadToggle={(value) => setPanel("payloadPanel", value)} />
       </div>
       <DiscoverySettings open={settingsOpen} onClose={closeSettings} discoveries={discoveries} reloadDiscoveries={loadDiscoveries} reloadFSMs={loadFSMs} />
     </>

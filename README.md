@@ -266,10 +266,10 @@ Web 页面实时展示：
 
 - 当前状态、Payload、Trace、全部状态转移和当前可接收事件；每条 Trace 可查看进入与退出 FSM 时的完整 Metadata。
 - FSM 按注册 `path` 的 `/` 层级形成可聚合折叠的文件夹树。
-- 左侧目录树支持调整宽度、折叠/展开并记忆状态。
+- 左侧目录树支持调整宽度和折叠/展开；右侧 Inspector 支持折叠/展开，两侧状态均会记忆。
 - 状态图作为全屏画布，右侧竖向工具栏提供放大、缩小、恢复默认视图和 PNG 导出；画布也支持连续拖动。
 - 状态节点支持鼠标悬浮或键盘聚焦查看转移信息。
-- Active Event 与 Payload 由顶部 Nav 独立打开或关闭；Trace 固定在底部状态栏并可展开完整记录。Header 可调节浮层和侧栏透明度，默认 85%。
+- Header 左侧展示当前 FSM 完整路径，最右侧按钮用于展开或折叠 Header 下方的右侧 Inspector；Inspector 顶部使用横向 Nav，目前提供 Payload。Active Event 面板通过自身标题栏折叠或展开，Trace 固定在底部状态栏并可展开完整记录。Header 的全局透明度会同步作用于左右侧栏以及 Active Event、Payload、Trace 等面板，默认 85%。
 - 明暗主题切换、pull 采集错误以及动态注册/注销。
 
 HTTP 接口包括 `GET/POST /api/fsms`、`GET /api/fsms/{id}`、`POST /api/push/{id}`；Client Server 另提供 `GET /api/targets`、`GET /api/clients/{id}/definition` 和 `GET /api/clients/{id}/realtime` 供独立服务聚合，实时更新使用 `/api/events` SSE。`Handler()` 可以挂载到已有 HTTP 服务。Server 不提供鉴权，绑定公网地址时应由应用或反向代理增加认证和访问控制。
