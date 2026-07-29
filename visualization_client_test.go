@@ -18,7 +18,13 @@ func (p visualizationTestPayload) DisplayName() string   { return "" }
 func (p visualizationTestPayload) Category() string      { return "" }
 
 func TestFSMImplementsPushClientDirectly(t *testing.T) {
-	server := visualization.NewServerWithConfig(visualization.ServerConfig{TraceLimit: 2})
+	server := visualization.NewServerWithConfig(visualization.ServerConfig{
+		TraceLimit: 2,
+		Replay: visualization.ReplayStorageConfig{
+			JSONL: visualization.ReplayJSONLConfig{Directory: t.TempDir()},
+		},
+	})
+	defer server.Close(context.Background())
 	machine := NewFSM("door", FSMState("closed"), &visualizationTestPayload{})
 	machine.Describe = "warehouse door state machine"
 	defer machine.Close()

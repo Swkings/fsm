@@ -16,6 +16,7 @@ type VisualizationConfig struct {
 	ServerAddress string
 	TraceLimit    int
 	PathPrefix    string
+	Replay        ReplayStorageConfig `json:",optional"`
 }
 
 // RegistrationConfigProvider 允许 Client 自行提供显示名称、目录和采集模式。
@@ -38,6 +39,7 @@ func newClientServer(config VisualizationConfig) *Server {
 	server := NewServerWithConfig(ServerConfig{
 		Address:    config.ServerAddress,
 		TraceLimit: config.TraceLimit,
+		Replay:     config.Replay,
 	})
 	server.pathPrefix = strings.TrimSpace(config.PathPrefix)
 	processClientServer.server = server

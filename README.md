@@ -155,6 +155,11 @@ clientServer := visualization.NewServer(
         ServerAddress: "0.0.0.0:5005",
         TraceLimit:    100,
         PathPrefix:    "production",
+        Replay: visualization.ReplayStorageConfig{
+            JSONL: visualization.ReplayJSONLConfig{
+                Directory: "data/replay",
+            },
+        },
     },
 )
 if err := clientServer.Start(); err != nil {
@@ -164,6 +169,30 @@ defer visualization.ShutdownClientServer(context.Background())
 
 fmt.Println(visualization.ClientServerURL())
 ```
+
+每次完成事件处理后都会把最新 FSM 快照写入 Replay 存储。未配置 `Replay.Driver` 或数据库连接时默认使用 JSONL，默认目录为 `data/replay`。也可以显式选择 MySQL 或 Redis：
+
+```go
+Replay: visualization.ReplayStorageConfig{
+    Driver: "mysql",
+    MySQL: visualization.ReplayMySQLConfig{
+        DSN:   "fsm:secret@tcp(mysql:3306)/fsm?parseTime=true",
+        Table: "fsm_replay_records",
+    },
+}
+
+// 或
+Replay: visualization.ReplayStorageConfig{
+    Driver: "redis",
+    Redis: visualization.ReplayRedisConfig{
+        Address:   "redis:6379",
+        DB:        0,
+        KeyPrefix: "fsm:replay",
+    },
+}
+```
+
+`examples/generated/config.yaml` 展示了通过 YAML 配置 JSONL 落盘，示例程序读取该配置后创建可视化 Server，无需把存储参数写进生成代码。
 
 内置 `fsm.FSM` 从 Payload 获取每个实例的显示名称和相对目录：
 
@@ -271,6 +300,10 @@ Web 页面实时展示：
 - 状态节点支持鼠标悬浮或键盘聚焦查看转移信息。
 - Header 左侧展示当前 FSM 完整路径，最右侧按钮用于展开或折叠 Header 下方的右侧 Inspector；Inspector 顶部使用横向 Nav，目前提供 Payload。Active Event 面板通过自身标题栏折叠或展开，Trace 固定在底部状态栏并可展开完整记录。Header 的全局透明度会同步作用于左右侧栏以及 Active Event、Payload、Trace 等面板，默认 85%。
 - 明暗主题切换、pull 采集错误以及动态注册/注销。
+
+Header 中部提供 `Visualization` 与 `Replay` 两个版面。Replay 可选择数据源、浏览记录、播放状态变化、查看当时的状态图和 Payload，并删除记录。设置页的“数据源发现”支持运行时添加 JSONL 目录、MySQL 或 Redis 数据源；主存储来自 `ServerConfig.Replay`/`VisualizationConfig.Replay`，未配置时自动回退 JSONL。
+
+Replay HTTP API 包括 `GET/POST /api/replay/sources`、`DELETE /api/replay/sources/{id}`、`GET /api/replay/records`、`GET /api/replay/records/{id}` 和 `DELETE /api/replay/records/{id}`。记录接口使用 `source` 查询参数选择数据源，并可用 `fsmId` 过滤状态机。
 
 HTTP 接口包括 `GET/POST /api/fsms`、`GET /api/fsms/{id}`、`POST /api/push/{id}`；Client Server 另提供 `GET /api/targets`、`GET /api/clients/{id}/definition` 和 `GET /api/clients/{id}/realtime` 供独立服务聚合，实时更新使用 `/api/events` SSE。`Handler()` 可以挂载到已有 HTTP 服务。Server 不提供鉴权，绑定公网地址时应由应用或反向代理增加认证和访问控制。
 

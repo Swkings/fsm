@@ -68,6 +68,7 @@ type Server struct {
 
 	discoveryMu sync.RWMutex
 	discoveries map[string]*registeredDiscovery
+	replays     *replayHub
 
 	lifecycleMu sync.Mutex
 	httpServer  *http.Server
@@ -101,6 +102,7 @@ func NewServerWithConfig(config ServerConfig) *Server {
 		sources:     make(map[string]*registeredClient),
 		clients:     make(map[chan []byte]struct{}),
 		discoveries: make(map[string]*registeredDiscovery),
+		replays:     newReplayHub(config.Replay),
 	}
 	server.handler = newHTTPHandler(server)
 	return server
@@ -355,7 +357,11 @@ func (server *Server) storeRealtimeDataLocked(
 		)
 	}
 	registered.snapshot = buildSnapshot(registered.definition, registered.config, data, registered.traces, "")
+	snapshot := cloneSnapshot(registered.snapshot)
 	server.mu.Unlock()
+	if snapshot.PreviousEvent != "" {
+		_ = server.replays.save(context.Background(), snapshot)
+	}
 	server.broadcast("updated", id)
 	return true
 }
@@ -493,6 +499,7 @@ func (server *Server) Close(ctx context.Context) error {
 		stopRegistration(source)
 	}
 	server.stopAllDiscoveries()
+	server.replays.close()
 	for _, client := range clients {
 		close(client)
 	}

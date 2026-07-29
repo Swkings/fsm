@@ -49,6 +49,7 @@ type ServerConfig struct {
 	Address string
 	// TraceLimit 是每个实例保留的最近 trace 数量，默认 100。
 	TraceLimit int
+	Replay     ReplayStorageConfig `json:",optional"`
 }
 
 // RegistrationConfig 描述本次注册如何挂载和采集客户端。
