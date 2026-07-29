@@ -13,18 +13,22 @@ go run ./examples/server
 
 `examples/generated` 会读取 `examples/generated/config.yaml` 启动可视化 Client Server，并每隔随机 3～5 秒触发当前状态下的一个合法事件。完整说明见 [`examples`](./examples/README.md)。
 
-通用配置模型可直接使用 `config.Config`。其中 `FSM` 是顶层字段，可由第三方应用复用或嵌入到自己的配置结构：
+`config.Config` 表示 FSM 子系统配置，第三方应用将其作为自身配置的顶层 `FSM` 字段使用；Store 与 Visualization 等能力统一位于该字段下：
+
+```go
+type AppConfig struct {
+    FSM config.Config
+    // 其它业务配置...
+}
+```
 
 ```yaml
 FSM:
-  Name: PlayerAction
-  InitialState: IDLE
-  StoreKey: generated/player
-Store:
-  JSONL:
-    Directory: data/fsm
-Visualization:
-  ServerAddress: 127.0.0.1:5005
+  Store:
+    JSONL:
+      Directory: data/fsm
+  Visualization:
+    ServerAddress: 127.0.0.1:5005
 ```
 
 ## 使用模板生成代码
@@ -241,7 +245,7 @@ defer visualization.ShutdownClientServer(context.Background())
 fmt.Println(visualization.ClientServerURL())
 ```
 
-`RegisterReplayStore` 只把已有 FSM Store 挂载为 Replay 数据源，不接管 Store 生命周期，也不会写入 FSM 数据。`examples/generated/config.yaml` 使用顶层 `Store` 配置创建持久化后端，再由 FSM 和可视化 Replay 共享。
+`RegisterReplayStore` 只把已有 FSM Store 挂载为 Replay 数据源，不接管 Store 生命周期，也不会写入 FSM 数据。`examples/generated/config.yaml` 使用顶层 `FSM.Store` 配置创建持久化后端，再由 FSM 和可视化 Replay 共享。
 
 内置 `fsm.FSM` 从 Payload 获取每个实例的显示名称和相对目录：
 
@@ -350,7 +354,7 @@ Web 页面实时展示：
 - Header 左侧展示当前 FSM 完整路径，最右侧按钮用于展开或折叠 Header 下方的右侧 Inspector；Inspector 顶部使用横向 Nav，目前提供 Payload。Active Event 面板通过自身标题栏折叠或展开，Trace 固定在底部状态栏并可展开完整记录。Header 的全局透明度会同步作用于左右侧栏以及 Active Event、Payload、Trace 等面板，默认 85%。
 - 明暗主题切换、pull 采集错误以及动态注册/注销。
 
-Header 中部提供 `Visualization` 与 `Replay` 两个版面。Replay 可选择数据源、浏览记录、播放状态变化、查看当时的状态图和 Payload，并删除记录。设置页的“数据源发现”支持运行时挂载 JSONL 目录、MySQL 或 Redis Store。可视化服务只读取和管理这些数据源，不负责 FSM 落盘；FSM 持久化必须由业务侧创建 Store 并调用 `BindStore`。
+Header 中部提供 `Visualization` 与 `Replay` 两个版面。Replay 左侧栏按目录展示数据源中的 FSM，选择后可浏览该 FSM 的记录、播放状态变化并查看当时的状态图；Payload 与 Visualization 一样展示在可折叠的右侧 Inspector 中。设置页的“数据源发现”支持运行时挂载 JSONL 目录、MySQL 或 Redis Store。可视化服务只读取和管理这些数据源，不负责 FSM 落盘；FSM 持久化必须由业务侧创建 Store 并调用 `BindStore`。
 
 Replay HTTP API 包括 `GET/POST /api/replay/sources`、`DELETE /api/replay/sources/{id}`、`GET /api/replay/records`、`GET /api/replay/records/{id}` 和 `DELETE /api/replay/records/{id}`。记录接口使用 `source` 查询参数选择数据源，并可用 `fsmId` 过滤状态机。
 

@@ -12,16 +12,13 @@ func TestGeneratedExampleLoadsVisualizationConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Visualization.ServerAddress != "127.0.0.1:5005" ||
-		config.Visualization.TraceLimit != 50 ||
-		config.Visualization.PathPrefix != "examples/generated" {
-		t.Fatalf("visualization config = %+v", config.Visualization)
+	if config.FSM.Visualization.ServerAddress != "127.0.0.1:5005" ||
+		config.FSM.Visualization.TraceLimit != 50 ||
+		config.FSM.Visualization.PathPrefix != "examples/generated" {
+		t.Fatalf("visualization config = %+v", config.FSM.Visualization)
 	}
-	if config.Store.JSONL.Directory != "data/fsm" || config.Store.JSONL.Filename != "generated-player.jsonl" {
-		t.Fatalf("store config = %+v", config.Store)
-	}
-	if config.FSM.Name != "PlayerAction" || config.FSM.InitialState != "IDLE" || config.FSM.StoreKey != "generated/player" {
-		t.Fatalf("fsm config = %+v", config.FSM)
+	if config.FSM.Store.JSONL.Directory != "data/fsm" || config.FSM.Store.JSONL.Filename != "generated-player.jsonl" {
+		t.Fatalf("store config = %+v", config.FSM.Store)
 	}
 }
 

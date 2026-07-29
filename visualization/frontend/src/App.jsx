@@ -55,7 +55,7 @@ function Folder({ node, selected, onSelect }) {
   )
 }
 
-function Sidebar({ fsms, selected, onSelect, collapsed, onToggle }) {
+function Sidebar({ fsms, selected, onSelect, collapsed, onToggle, title = 'Machines', countLabel, searchPlaceholder = '搜索 FSM、状态或路径', emptyLabel = '尚未注册 FSM' }) {
   const [query, setQuery] = useState('')
   const visible = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
@@ -66,18 +66,18 @@ function Sidebar({ fsms, selected, onSelect, collapsed, onToggle }) {
   return (
     <aside className="left-sidebar">
       <div className="aside-heading">
-        <span className="aside-title">Machines</span>
-        <span className="count-pill">{fsms.length} registered</span>
+        <span className="aside-title">{title}</span>
+        <span className="count-pill">{countLabel || `${fsms.length} registered`}</span>
         <button id="sidebarToggle" className="sidebar-toggle" type="button" aria-label={`${collapsed ? '展开' : '折叠'}左侧栏`} title={`${collapsed ? '展开' : '折叠'}左侧栏`} aria-expanded={!collapsed} onClick={onToggle}>
           <svg className="left-sidebar-open-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><rect className="sidebar-pane-fill" x="2.5" y="3.5" width="3.5" height="9" rx=".75"/><path d="M6.5 3v10"/></svg>
           <svg className="left-sidebar-closed-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.5 3v10"/></svg>
         </button>
       </div>
-      <div className="tree-toolbar"><input className="tree-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 FSM、状态或路径" aria-label="搜索 FSM" /></div>
+      <div className="tree-toolbar"><input className="tree-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={searchPlaceholder} aria-label="搜索 FSM" /></div>
       <div className="fsm-list">
         {[...tree.items].sort(compareMachines).map((item) => <MachineButton key={item.id} item={item} selected={selected === item.id} onSelect={onSelect} />)}
         {[...tree.folders.values()].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN')).map((folder) => <Folder key={folder.path} node={folder} selected={selected} onSelect={onSelect} />)}
-        {!visible.length && <div className="available-empty">{fsms.length ? '没有匹配的 FSM' : '尚未注册 FSM'}</div>}
+        {!visible.length && <div className="available-empty">{fsms.length ? '没有匹配的 FSM' : emptyLabel}</div>}
       </div>
     </aside>
   )
@@ -178,13 +178,85 @@ function TracePanel({ traces }) {
   )
 }
 
-function ReplayPage() {
-  const [sources, setSources] = useState([]), [source, setSource] = useState("primary"), [records, setRecords] = useState([]), [selected, setSelected] = useState(null), [playing, setPlaying] = useState(false)
-  const load = useCallback(async () => { const s = await api.replaySources(); setSources(s); const next = s.some((item) => item.id === source) ? source : (s[0]?.id || ''); if (next !== source) { setSource(next); return } if (!next) { setRecords([]); setSelected(null); return } const r = await api.replayRecords(next); setRecords(r); setSelected(r[0] ? await api.replayRecord(next, r[0].id) : null) }, [source])
-  useEffect(() => { load().catch(console.error) }, [load])
-  useEffect(() => { if (!playing || records.length < 2) return; const ordered = [...records].reverse(); let index = Math.max(0, ordered.findIndex((x) => x.id === selected?.id)); const timer = setInterval(async () => { index = (index + 1) % ordered.length; setSelected(await api.replayRecord(source, ordered[index].id)) }, 1000); return () => clearInterval(timer) }, [playing, records, selected?.id, source])
-  const removeSelected = async () => { if (!selected || !window.confirm('删除当前回放记录？')) return; setPlaying(false); await api.deleteReplayRecord(source, selected.id); await load() }
-  return <main className="replay-page"><div className="replay-toolbar"><select value={source} onChange={(event) => setSource(event.target.value)}>{sources.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.driver}</option>)}</select><button type="button" onClick={load}>刷新</button><span>{records.length} records</span></div><div className="replay-layout"><aside className="replay-list">{records.map((item) => <button key={item.id} className={"replay-record" + (selected?.id === item.id ? " active" : "")} type="button" onClick={async () => { setPlaying(false); setSelected(await api.replayRecord(source, item.id)) }}><strong>{item.displayName}</strong><span>{item.event || "snapshot"} · {item.state}</span><time>{formatTime(item.recordedAt)}</time></button>)}</aside><section className="replay-stage">{selected ? <><div className="replay-controls"><button type="button" onClick={() => setPlaying((value) => !value)}>{playing ? "暂停" : "播放"}</button><span>{selected.snapshot.previousState || "-"} -- {selected.snapshot.previousEvent || "-"} → {selected.snapshot.currentState}</span><button className="replay-delete" type="button" onClick={removeSelected}>删除</button></div><div className="replay-graph"><StateGraph item={selected.snapshot}/></div><pre className="replay-payload"><code>{JSON.stringify(selected.snapshot.payload ?? null, null, 2)}</code></pre></> : <div className="replay-empty">暂无可回放记录</div>}</section></div></main>
+function ReplayPage({ sidebarCollapsed, onSidebarToggle, payloadOpen, onPayloadToggle }) {
+  const [sources, setSources] = useState([])
+  const [source, setSource] = useState('')
+  const [allRecords, setAllRecords] = useState([])
+  const [selectedFSM, setSelectedFSM] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [playing, setPlaying] = useState(false)
+
+  const load = useCallback(async () => {
+    const values = await api.replaySources()
+    setSources(values)
+    const nextSource = values.some((item) => item.id === source) ? source : (values[0]?.id || '')
+    if (nextSource !== source) setSource(nextSource)
+    setAllRecords(nextSource ? await api.replayRecords(nextSource) : [])
+  }, [source])
+  useEffect(() => { setPlaying(false); setSelected(null); load().catch(console.error) }, [load])
+
+  const machines = useMemo(() => {
+    const grouped = new Map()
+    allRecords.forEach((record) => {
+      if (!record.fsmId) return
+      const current = grouped.get(record.fsmId)
+      if (!current) {
+        grouped.set(record.fsmId, {
+          id: record.fsmId,
+          name: record.fsmId,
+          displayName: record.displayName || record.fsmId,
+          path: record.path || '',
+          currentState: record.state || '',
+          mode: 'replay',
+          recordCount: 1,
+        })
+      } else {
+        current.recordCount++
+      }
+    })
+    return [...grouped.values()].sort(compareMachines)
+  }, [allRecords])
+  useEffect(() => {
+    if (!machines.some((item) => item.id === selectedFSM)) setSelectedFSM(machines[0]?.id || '')
+  }, [machines, selectedFSM])
+  const records = useMemo(() => allRecords.filter((item) => item.fsmId === selectedFSM), [allRecords, selectedFSM])
+  useEffect(() => {
+    let cancelled = false
+    if (!source || !selectedFSM || !records.length) { setSelected(null); return () => { cancelled = true } }
+    if (selected?.sourceId === source && selected?.fsmId === selectedFSM && records.some((item) => item.id === selected.id)) return () => { cancelled = true }
+    api.replayRecord(source, records[0].id).then((record) => { if (!cancelled) setSelected(record) }).catch(console.error)
+    return () => { cancelled = true }
+  }, [records, selected?.fsmId, selected?.id, selected?.sourceId, selectedFSM, source])
+  useEffect(() => {
+    if (!playing || records.length < 2) return undefined
+    const ordered = [...records].reverse()
+    let index = Math.max(0, ordered.findIndex((item) => item.id === selected?.id))
+    const timer = setInterval(async () => {
+      index = (index + 1) % ordered.length
+      setSelected(await api.replayRecord(source, ordered[index].id))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [playing, records, selected?.id, source])
+  const chooseRecord = async (record) => {
+    setPlaying(false)
+    setSelected(await api.replayRecord(source, record.id))
+  }
+  const removeSelected = async () => {
+    if (!selected || !window.confirm('删除当前回放记录？')) return
+    setPlaying(false)
+    await api.deleteReplayRecord(source, selected.id)
+    setSelected(null)
+    await load()
+  }
+
+  return <>
+    <Sidebar fsms={machines} selected={selectedFSM} onSelect={(id) => { setPlaying(false); setSelected(null); setSelectedFSM(id) }} collapsed={sidebarCollapsed} onToggle={onSidebarToggle} title="Replay FSM" countLabel={`${machines.length} stored`} searchPlaceholder="搜索已存储 FSM、状态或路径" emptyLabel="当前数据源没有 FSM" />
+    <main className="replay-page">
+      <div className="replay-toolbar"><select value={source} onChange={(event) => { setSelectedFSM(''); setSelected(null); setSource(event.target.value) }}>{sources.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.driver}</option>)}</select><button type="button" onClick={() => load().catch(console.error)}>刷新</button><span>{records.length} records · {machines.find((item) => item.id === selectedFSM)?.displayName || 'no FSM'}</span></div>
+      <div className="replay-layout"><aside className="replay-list">{records.map((item) => <button key={item.id} className={`replay-record${selected?.id === item.id ? ' active' : ''}`} type="button" onClick={() => chooseRecord(item).catch(console.error)}><strong>{item.displayName || item.fsmId}</strong><span>{item.event || 'snapshot'} · {item.state}</span><time>{formatTime(item.recordedAt)}</time></button>)}</aside><section className="replay-stage">{selected ? <><div className="replay-controls"><button type="button" onClick={() => setPlaying((value) => !value)}>{playing ? '暂停' : '播放'}</button><span>{selected.snapshot.previousState || '-'} -- {selected.snapshot.previousEvent || '-'} → {selected.snapshot.currentState}</span><button className="replay-delete" type="button" onClick={removeSelected}>删除</button></div><div className="replay-graph"><StateGraph item={selected.snapshot}/></div></> : <div className="replay-empty">当前 FSM 暂无可回放记录</div>}</section></div>
+    </main>
+    <RightSidebar item={selected?.snapshot} payloadOpen={payloadOpen} onPayloadToggle={onPayloadToggle} />
+  </>
 }
 
 function ReplaySourceSettings() {
@@ -349,9 +421,9 @@ function App() {
 
   return (
     <>
-      <div ref={layoutRef} className={`layout${page === 'replay' ? ' replay-mode' : ''}`}>
+      <div ref={layoutRef} className="layout">
         {page === 'visualization' && <Sidebar fsms={fsms} selected={selected} onSelect={setSelected} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} />}
-        {page === 'visualization' && <div id="sidebarResize" className="resize-handle" role="separator" aria-label="调整状态机列表宽度" aria-orientation="vertical" tabIndex="0" onPointerDown={resizeStart} onKeyDown={(event) => { if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return; event.preventDefault(); const currentWidth = layoutRef.current?.querySelector(".left-sidebar")?.getBoundingClientRect().width || 288; const width = Math.max(190, currentWidth + (event.key === "ArrowLeft" ? -16 : 16)); document.documentElement.style.setProperty("--sidebar-width", `${width}px`); remember("fsm-sidebar-width", width) }} onDoubleClick={() => { document.documentElement.style.removeProperty('--sidebar-width'); remember('fsm-sidebar-width', '') }} />}
+        <div id="sidebarResize" className="resize-handle" role="separator" aria-label="调整状态机列表宽度" aria-orientation="vertical" tabIndex="0" onPointerDown={resizeStart} onKeyDown={(event) => { if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return; event.preventDefault(); const currentWidth = layoutRef.current?.querySelector(".left-sidebar")?.getBoundingClientRect().width || 288; const width = Math.max(190, currentWidth + (event.key === "ArrowLeft" ? -16 : 16)); document.documentElement.style.setProperty("--sidebar-width", `${width}px`); remember("fsm-sidebar-width", width) }} onDoubleClick={() => { document.documentElement.style.removeProperty('--sidebar-width'); remember('fsm-sidebar-width', '') }} />
         <header className="topbar">
           <div className="topbar-current" title={page === 'replay' ? 'Replay / Data' : currentPath}><span className="topbar-current-label">{page === 'replay' ? 'VIEW' : 'FSM'}</span><span className="topbar-current-path">{page === 'replay' ? '/replay' : currentPath}</span></div>
           <nav className="page-nav" aria-label="主版面">
@@ -365,13 +437,13 @@ function App() {
             </div>
             <button id="themeToggle" className="icon-button" type="button" aria-label={`切换为${theme === 'dark' ? '浅色' : '深色'}主题`} title={`切换为${theme === 'dark' ? '浅色' : '深色'}主题`} onClick={() => setTheme((value) => value === 'light' ? 'dark' : 'light')}><svg className="theme-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg><svg className="theme-moon" viewBox="0 0 24 24"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7z"/></svg></button>
             <button id="discoveryToggle" className="icon-button" type="button" aria-label="打开设置" title="设置" aria-expanded={settingsOpen} onClick={() => setSettingsOpen(true)}><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.86 1.86-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.6v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.88.34l-.06.06-1.86-1.86.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-1.5-1H5.9v-2.6H6a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06L8.96 6.6l.06.06A1.7 1.7 0 0 0 10.9 7a1.7 1.7 0 0 0 1-1.5v-.1h2.6v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.86 1.86-.06.06A1.7 1.7 0 0 0 18.9 10.4a1.7 1.7 0 0 0 1.5 1h.1V14h-.1a1.7 1.7 0 0 0-1 .6z"/></svg></button>
-            {page === 'visualization' && <button className="sidebar-toggle right-sidebar-toggle" type="button" aria-label={(rightSidebarCollapsed ? "展开" : "折叠") + "右侧栏"} title={(rightSidebarCollapsed ? "展开" : "折叠") + "右侧栏"} aria-expanded={!rightSidebarCollapsed} onClick={() => setRightSidebarCollapsed((value) => !value)}>
+            <button className="sidebar-toggle right-sidebar-toggle" type="button" aria-label={(rightSidebarCollapsed ? "展开" : "折叠") + "右侧栏"} title={(rightSidebarCollapsed ? "展开" : "折叠") + "右侧栏"} aria-expanded={!rightSidebarCollapsed} onClick={() => setRightSidebarCollapsed((value) => !value)}>
               <svg className="right-sidebar-open-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><rect className="sidebar-pane-fill" x="10" y="3.5" width="3.5" height="9" rx=".75"/><path d="M9.5 3v10"/></svg>
               <svg className="right-sidebar-closed-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M9.5 3v10"/></svg>
-            </button>}
+            </button>
           </div>
         </header>
-        {page === 'replay' ? <ReplayPage /> : <main className="workspace">
+        {page === 'replay' ? <ReplayPage sidebarCollapsed={sidebarCollapsed} onSidebarToggle={() => setSidebarCollapsed((value) => !value)} payloadOpen={payloadOpen} onPayloadToggle={(value) => setPanel("payloadPanel", value)} /> : <main className="workspace">
           {!current ? <div className="empty"><div><strong>等待 FSM 注册</strong><span>注册完成后将在此显示状态图。</span></div></div> : <div className="content visible"><section className="graph-surface" aria-label="FSM 状态图画布">
             <StateGraph item={current} />
             {current.collectionError && <div className="collection-error" style={{ display: 'block' }}>{current.collectionError}</div>}

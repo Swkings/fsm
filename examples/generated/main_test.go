@@ -57,9 +57,6 @@ func TestGeneratedPlayerTransitionGraphAndLogic(t *testing.T) {
 		payload.LastAttackDamage != 25 || payload.ActionCount != len(sequence) {
 		t.Fatalf("final payload = %+v", payload)
 	}
-	if len(payload.History) != len(sequence) {
-		t.Fatalf("history length = %d, want %d", len(payload.History), len(sequence))
-	}
 }
 
 func TestGeneratedPlayerAttackRequiresDamageParams(t *testing.T) {

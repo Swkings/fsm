@@ -20,11 +20,14 @@ import (
 )
 
 const (
-	minEventInterval = 3 * time.Second
-	maxEventInterval = 5 * time.Second
+	minEventInterval  = 3 * time.Second
+	maxEventInterval  = 5 * time.Second
+	generatedStoreKey = "generated/player"
 )
 
-type exampleConfig = config.Config
+type exampleConfig struct {
+	FSM config.Config
+}
 
 func main() {
 	configPath := flag.String("config", "examples/generated/config.yaml", "generated example config file")
@@ -38,16 +41,16 @@ func main() {
 }
 
 func run(ctx context.Context, configPath string) error {
-	config, err := loadExampleConfig(configPath)
+	appConfig, err := loadExampleConfig(configPath)
 	if err != nil {
 		return err
 	}
-	fsmStore, err := store.New(config.Store)
+	fsmStore, err := store.New(appConfig.FSM.Store)
 	if err != nil {
 		return fmt.Errorf("create fsm store: %w", err)
 	}
 	defer fsmStore.Close()
-	clientServer := visualization.NewServer(config.Visualization)
+	clientServer := visualization.NewServer(appConfig.FSM.Visualization)
 	if err = clientServer.RegisterReplayStore("primary", "Generated Player Store", fsmStore); err != nil {
 		return fmt.Errorf("register replay store: %w", err)
 	}
@@ -65,13 +68,7 @@ func run(ctx context.Context, configPath string) error {
 	}
 	machine := player.NewFSMPlayerAction(payload)
 	defer machine.Close()
-	if config.FSM.Name != "" && config.FSM.Name != machine.Name.String() {
-		return fmt.Errorf("configured fsm name %q does not match generated name %q", config.FSM.Name, machine.Name)
-	}
-	if config.FSM.InitialState != "" && config.FSM.InitialState != machine.GetCurrentState().String() {
-		return fmt.Errorf("configured initial state %q does not match generated state %q", config.FSM.InitialState, machine.GetCurrentState())
-	}
-	if err = machine.BindStore(ctx, fsmStore, config.FSM.StoreKey); err != nil {
+	if err = machine.BindStore(ctx, fsmStore, generatedStoreKey); err != nil {
 		return fmt.Errorf("restore generated player: %w", err)
 	}
 	registration, err := visualization.RegisterClient(ctx, machine)
@@ -92,11 +89,11 @@ func run(ctx context.Context, configPath string) error {
 }
 
 func loadExampleConfig(path string) (exampleConfig, error) {
-	var config exampleConfig
-	if err := conf.Load(path, &config); err != nil {
+	var appConfig exampleConfig
+	if err := conf.Load(path, &appConfig); err != nil {
 		return exampleConfig{}, fmt.Errorf("load generated example config %q: %w", path, err)
 	}
-	return config, nil
+	return appConfig, nil
 }
 
 func runRandomEvents(ctx context.Context, machine *fsm.FSM[*types.Payload]) error {

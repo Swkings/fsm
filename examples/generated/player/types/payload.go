@@ -9,17 +9,16 @@ type AttackParams struct {
 
 // Payload 保存示例角色在状态转移过程中变化的少量业务数据。
 type Payload struct {
-	Name             string   `json:"name"`
-	Health           int      `json:"health"`
-	TargetHealth     int      `json:"targetHealth"`
-	Stamina          int      `json:"stamina"`
-	MoveSpeed        int      `json:"moveSpeed"`
-	VerticalSpeed    int      `json:"verticalSpeed"`
-	IncomingDamage   int      `json:"incomingDamage,omitempty"`
-	LastAttackDamage int      `json:"lastAttackDamage,omitempty"`
-	LastEvent        string   `json:"lastEvent,omitempty"`
-	ActionCount      int      `json:"actionCount"`
-	History          []string `json:"history,omitempty"`
+	Name             string `json:"name"`
+	Health           int    `json:"health"`
+	TargetHealth     int    `json:"targetHealth"`
+	Stamina          int    `json:"stamina"`
+	MoveSpeed        int    `json:"moveSpeed"`
+	VerticalSpeed    int    `json:"verticalSpeed"`
+	IncomingDamage   int    `json:"incomingDamage,omitempty"`
+	LastAttackDamage int    `json:"lastAttackDamage,omitempty"`
+	LastEvent        string `json:"lastEvent,omitempty"`
+	ActionCount      int    `json:"actionCount"`
 }
 
 func (p *Payload) JSON() ([]byte, error) {

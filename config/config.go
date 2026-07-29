@@ -7,19 +7,11 @@ const (
 	StoreDriverRedis = "redis"
 )
 
-// Config 是可直接映射 YAML/JSON 顶层结构的通用配置，第三方应用可以嵌入
-// 或直接复用，并在旁边增加自己的业务字段。
+// Config 是 FSM 子系统的通用配置。第三方应用可将其声明为自身配置的
+// 顶层 FSM 字段，使持久化与可视化配置统一位于 FSM 命名空间下。
 type Config struct {
-	FSM           FSM           `json:"fsm,optional"`
 	Store         Store         `json:"store,optional"`
 	Visualization Visualization `json:"visualization,optional"`
-}
-
-// FSM 描述可由配置确定的状态机实例信息。
-type FSM struct {
-	Name         string `json:"name,optional"`
-	InitialState string `json:"initialState,optional"`
-	StoreKey     string `json:"storeKey,optional"`
 }
 
 // Store 配置 FSM 持久化使用的存储。Driver 为空时根据连接配置推断，

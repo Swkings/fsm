@@ -8,32 +8,6 @@ import (
 	"github.com/swkings/fsm/examples/generated/player/types"
 )
 
-var stateDescriptions = map[fsm.FSMState]string{
-	types.StateEnum.IDLE:         "站立闲置",
-	types.StateEnum.WALK:         "行走",
-	types.StateEnum.RUN:          "奔跑",
-	types.StateEnum.JUMP_START:   "起跳准备",
-	types.StateEnum.IN_AIR:       "空中滞留",
-	types.StateEnum.ATTACK_LIGHT: "轻攻击",
-	types.StateEnum.ATTACK_HEAVY: "重攻击",
-	types.StateEnum.HURT:         "受击硬直",
-	types.StateEnum.DIE:          "死亡",
-}
-
-var eventDescriptions = map[fsm.FSMEvent]string{
-	types.EventEnum.MOVE:      "输入移动",
-	types.EventEnum.RUN:       "输入奔跑",
-	types.EventEnum.STOP:      "停止输入",
-	types.EventEnum.JUMP:      "按下跳跃",
-	types.EventEnum.HIT_LIGHT: "按下轻击",
-	types.EventEnum.HIT_HEAVY: "按下重击",
-	types.EventEnum.ANIM_END:  "动画结束",
-	types.EventEnum.LAND:      "着地",
-	types.EventEnum.DAMAGE:    "受到伤害",
-	types.EventEnum.DEAD:      "生命值归零",
-	types.EventEnum.REVIVE:    "复活",
-}
-
 // handleTransition 是示例业务逻辑入口。每个由生成器创建的 Handler 文件
 // 仍然独立绑定一条转移，只把重复的数据更新委托给这个辅助函数。
 func handleTransition(machine *fsm.FSM[*types.Payload], event fsm.FSMEvent) error {
@@ -87,13 +61,6 @@ func handleTransition(machine *fsm.FSM[*types.Payload], event fsm.FSMEvent) erro
 		payload.IncomingDamage = 0
 	}
 
-	payload.History = append(payload.History, fmt.Sprintf(
-		"%s(%s) -- %s(%s)",
-		fromState,
-		stateDescriptions[fromState],
-		event,
-		eventDescriptions[event],
-	))
 	return nil
 }
 

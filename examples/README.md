@@ -39,7 +39,7 @@ go run gen/main.go \
 
 独立可视化服务还支持通过 `RegisterClientServerDiscovery` 或 Web Header 中的服务发现配置，发现多个业务进程的 Client Server，再展开并持续 pull 各进程内注册的 FSM；发现地址也可以直接填写单个 Client Server 的基础 URL。
 
-React Web 页面以可拖动状态图作为全屏画布；Header 左侧展示当前 FSM 完整路径，最右侧按钮控制 Header 下方的右侧 Inspector，Inspector 顶部横向 Nav 目前提供 Payload。Active Event 面板通过自身标题栏折叠或展开，Trace 位于底部可展开状态栏。Header 的全局透明度会同步作用于左右侧栏以及 Active Event、Payload、Trace 等面板；右侧竖向画布工具栏提供缩放、复位和 PNG 导出，同时支持文件夹聚合搜索、节点悬浮信息、侧栏折叠记忆和明暗主题切换：
+React Web 页面以可拖动状态图作为全屏画布；Visualization 与 Replay 都使用 FSM 左侧栏和 Payload 右侧 Inspector，Replay 左侧栏用于切换已持久化的其它 FSM。Header 左侧展示当前 FSM 完整路径，最右侧按钮控制 Header 下方的右侧 Inspector。Active Event 面板通过自身标题栏折叠或展开，Trace 位于底部可展开状态栏。Header 的全局透明度会同步作用于左右侧栏以及 Active Event、Payload、Trace 等面板；右侧竖向画布工具栏提供缩放、复位和 PNG 导出，同时支持文件夹聚合搜索、节点悬浮信息、侧栏折叠记忆和明暗主题切换：
 
 ```bash
 go run ./examples/server
