@@ -36,7 +36,7 @@ func main() {
 		mu: &sync.Mutex{},
 	}
 	machine := fsm.NewFSM("async-demo", "idle", data)
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 
 	blockStarted := make(chan struct{})
 	releaseBlock := make(chan struct{})
@@ -71,13 +71,15 @@ func main() {
 	lowNotify := make(chan fsm.AsyncEventResult, 1)
 	highNotify := make(chan fsm.AsyncEventResult, 1)
 
-	mustSubmit(machine, "low",
+	mustSubmit(
+		machine, "low",
 		fsm.WithEventPriority(fsm.EventPriorityLow),
 		fsm.WithEventTTL(time.Second),
 		fsm.WithEventContext(eventContext),
 		fsm.WithEventNotify(lowNotify),
 	)
-	mustSubmit(machine, "high",
+	mustSubmit(
+		machine, "high",
 		fsm.WithEventPriority(fsm.EventPriorityHigh),
 		fsm.WithEventContext(eventContext),
 		fsm.WithEventNotify(highNotify),
@@ -94,7 +96,8 @@ func main() {
 	cancelContext, cancelEvent := context.WithCancel(context.Background())
 	cancelNotify := make(chan fsm.AsyncEventResult, 1)
 	cancelEvent()
-	mustSubmit(machine, "cancel",
+	mustSubmit(
+		machine, "cancel",
 		fsm.WithEventContext(cancelContext),
 		fsm.WithEventNotify(cancelNotify),
 	)

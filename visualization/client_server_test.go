@@ -80,8 +80,8 @@ func TestNewServerConfigRegistersAndPushesMultipleFSMs(t *testing.T) {
 func TestClientServerDiscoveryAggregatesMultipleServers(t *testing.T) {
 	firstSource, firstHTTP, firstClient := newExportedTestServer(t, "worker", "idle", "Workers/A")
 	secondSource, secondHTTP, _ := newExportedTestServer(t, "worker", "waiting", "Workers/B")
-	defer firstSource.Close(context.Background())
-	defer secondSource.Close(context.Background())
+	defer func() { _ = firstSource.Close(context.Background()) }()
+	defer func() { _ = secondSource.Close(context.Background()) }()
 	defer firstHTTP.Close()
 	defer secondHTTP.Close()
 
@@ -97,7 +97,7 @@ func TestClientServerDiscoveryAggregatesMultipleServers(t *testing.T) {
 	})
 
 	aggregate := NewServer()
-	defer aggregate.Close(context.Background())
+	defer func() { _ = aggregate.Close(context.Background()) }()
 	registration, err := aggregate.RegisterClientServerDiscovery(context.Background(), discovery, DiscoveryConfig{
 		ID: "clients", PathPrefix: "production",
 		RefreshInterval: 10 * time.Millisecond, PullInterval: 10 * time.Millisecond,

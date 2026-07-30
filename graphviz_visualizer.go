@@ -69,7 +69,7 @@ func writeHeaderLine(buf *bytes.Buffer) {
 func writeTransitions(buf *bytes.Buffer, sortedEKeys []EventStateKey, transitions map[EventStateKey]FSMState) {
 	for _, k := range sortedEKeys {
 		v := transitions[k]
-		buf.WriteString(fmt.Sprintf(`    %s -> %s [ label = %s ];`, strconv.Quote(string(k.FromState)), strconv.Quote(string(v)), strconv.Quote(string(k.Event))))
+		fmt.Fprintf(buf, `    %s -> %s [ label = %s ];`, strconv.Quote(string(k.FromState)), strconv.Quote(string(v)), strconv.Quote(string(k.Event)))
 		buf.WriteString("\n")
 	}
 
@@ -80,9 +80,9 @@ func writeTransitions(buf *bytes.Buffer, sortedEKeys []EventStateKey, transition
 func writeStates(buf *bytes.Buffer, current FSMState, sortedStateKeys []FSMState) {
 	for _, k := range sortedStateKeys {
 		if k == current {
-			buf.WriteString(fmt.Sprintf(`    %s [color = "red"];`, strconv.Quote(string(k))))
+			fmt.Fprintf(buf, `    %s [color = "red"];`, strconv.Quote(string(k)))
 		} else {
-			buf.WriteString(fmt.Sprintf(`    %s;`, strconv.Quote(string(k))))
+			fmt.Fprintf(buf, `    %s;`, strconv.Quote(string(k)))
 		}
 		buf.WriteString("\n")
 	}
@@ -90,7 +90,7 @@ func writeStates(buf *bytes.Buffer, current FSMState, sortedStateKeys []FSMState
 
 // writeFooter 写入 DOT 图的结束标记。
 func writeFooter(buf *bytes.Buffer) {
-	buf.WriteString(fmt.Sprintln("}"))
+	fmt.Fprintln(buf, "}")
 }
 
 // DotString 将状态机当前配置渲染为 Graphviz DOT 文本。

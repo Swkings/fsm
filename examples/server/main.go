@@ -22,7 +22,7 @@ func (p *doorPayload) JSON() ([]byte, error) { return json.Marshal(p) }
 func (p *doorPayload) DisplayName() string   { return "Warehouse Door" }
 func (p *doorPayload) Category() string      { return "warehouse/doors" }
 
-// externalWorker 不依赖 fsm.FSM，只需直接实现 visualization.Client。
+// externalWorker 不依赖 fsm.FSM，只需直接实现 visualization.ClientI。
 type externalWorker struct {
 	mu       sync.RWMutex
 	state    string
@@ -67,11 +67,11 @@ func main() {
 	if err := server.Start(); err != nil {
 		panic(err)
 	}
-	defer visualization.ShutdownClientServer(context.Background())
+	defer func() { _ = visualization.ShutdownClientServer(context.Background()) }()
 
 	doorData := &doorPayload{Location: "warehouse"}
 	door := fsm.NewFSM("door", "closed", doorData)
-	defer door.Close()
+	defer func() { _ = door.Close() }()
 	door.SetTransitions(
 		fsm.NewTransitionItem("open", "closed", "opened", fsm.Handler[*doorPayload]{Handler: func(machine *fsm.FSM[*doorPayload], _ ...any) error {
 			machine.Payload.OpenCount++

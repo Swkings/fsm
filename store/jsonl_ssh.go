@@ -32,21 +32,6 @@ type sshJSONLStore struct {
 	mu        sync.Mutex
 }
 
-// RemoteDirectoryEntry describes a directory or JSONL file available through SFTP.
-type RemoteDirectoryEntry struct {
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	Directory bool   `json:"directory"`
-	Size      int64  `json:"size,omitempty"`
-}
-
-// RemoteDirectoryView is a browsable snapshot of one remote SFTP directory.
-type RemoteDirectoryView struct {
-	Path    string                 `json:"path"`
-	Parent  string                 `json:"parent,omitempty"`
-	Entries []RemoteDirectoryEntry `json:"entries"`
-}
-
 type sshSFTPConnection struct {
 	address  string
 	username string
@@ -147,7 +132,7 @@ func BrowseSSHJSONL(ctx context.Context, cfg config.JSONL) (RemoteDirectoryView,
 	if err != nil {
 		return RemoteDirectoryView{}, err
 	}
-	defer connection.close()
+	defer func() { _ = connection.close() }()
 
 	directory := strings.TrimSpace(cfg.Directory)
 	if directory == "" {

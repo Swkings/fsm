@@ -11,7 +11,7 @@ import (
 func TestGeneratedPlayerTransitionGraphAndLogic(t *testing.T) {
 	payload := &types.Payload{Name: "test-player", Health: 100, TargetHealth: 100, Stamina: 100}
 	machine := player.NewFSMPlayerAction(payload)
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 
 	transitionCounts := map[fsm.FSMState]int{
 		types.StateEnum.IDLE:         7,
@@ -62,7 +62,7 @@ func TestGeneratedPlayerTransitionGraphAndLogic(t *testing.T) {
 func TestGeneratedPlayerAttackRequiresDamageParams(t *testing.T) {
 	payload := &types.Payload{Name: "test-player", Health: 100, TargetHealth: 100, Stamina: 100}
 	machine := player.NewFSMPlayerAction(payload)
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 
 	if _, err := machine.ProcessEvent(types.EventEnum.HIT_LIGHT); err == nil {
 		t.Fatal("HIT_LIGHT without AttackParams error = nil")

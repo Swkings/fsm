@@ -1,0 +1,22 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  exclusions:
+    paths:
+      - visualization/frontend/node_modules
+    rules:
+      # go-zero's conf loader uses `optional` as configuration metadata.
+      - path: config/config.go
+        text: 'SA5008: invalid appearance of unknown `optional` tag option'
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

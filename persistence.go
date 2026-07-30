@@ -25,13 +25,13 @@ var (
 
 type persistenceBinding struct {
 	sync.RWMutex
-	backend store.Store
+	backend store.StoreI
 	key     string
 }
 
 // BindStore 将持久化后端绑定到 FSM，并按 key 恢复最近一次成功保存的数据。
 // 找不到历史数据时会保存当前初始快照。key 应是业务实例的稳定标识。
-func (fsm *FSM[T]) BindStore(ctx context.Context, backend store.Store, key string) error {
+func (fsm *FSM[T]) BindStore(ctx context.Context, backend store.StoreI, key string) error {
 	if fsm == nil || backend == nil {
 		return fmt.Errorf("%w: store is nil", ErrPersistenceFailed)
 	}
@@ -74,7 +74,7 @@ func (fsm *FSM[T]) UnbindStore() {
 	fsm.persistence.Unlock()
 }
 
-func (fsm *FSM[T]) bindStore(backend store.Store, key string) {
+func (fsm *FSM[T]) bindStore(backend store.StoreI, key string) {
 	fsm.persistence.Lock()
 	fsm.persistence.backend, fsm.persistence.key = backend, key
 	fsm.persistence.Unlock()

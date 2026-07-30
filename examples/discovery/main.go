@@ -33,10 +33,10 @@ func main() {
 	if err := clientServer.Start(); err != nil {
 		panic(err)
 	}
-	defer visualization.ShutdownClientServer(context.Background())
+	defer func() { _ = visualization.ShutdownClientServer(context.Background()) }()
 
 	worker := newWorkerFSM()
-	defer worker.Close()
+	defer func() { _ = worker.Close() }()
 	registration, err := visualization.RegisterClient(ctx, worker)
 	if err != nil {
 		panic(err)
@@ -55,7 +55,7 @@ func main() {
 	if err := aggregate.Start(); err != nil {
 		panic(err)
 	}
-	defer aggregate.Close(context.Background())
+	defer func() { _ = aggregate.Close(context.Background()) }()
 	discovery, err := aggregate.RegisterClientServerDiscovery(ctx, &visualization.HTTPServiceDiscovery{
 		Endpoint: registryURL,
 	}, visualization.DiscoveryConfig{

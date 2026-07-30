@@ -91,6 +91,7 @@ func (s *Server) handleReplaySources(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(405)
 	}
 }
+
 func (s *Server) handleReplaySourceDetail(w http.ResponseWriter, r *http.Request) {
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/replay/sources/"), "/")
 	if id == "" {
@@ -107,6 +108,7 @@ func (s *Server) handleReplaySourceDetail(w http.ResponseWriter, r *http.Request
 	}
 	w.WriteHeader(204)
 }
+
 func (s *Server) handleReplayRecords(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(405)
@@ -120,6 +122,7 @@ func (s *Server) handleReplayRecords(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, records)
 }
+
 func (s *Server) handleReplayRecordDetail(w http.ResponseWriter, r *http.Request) {
 	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/replay/records/"), "/")
 	if id == "" {

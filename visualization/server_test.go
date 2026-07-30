@@ -20,7 +20,6 @@ import (
 type thirdPartyFSM struct {
 	mu              sync.Mutex
 	definitionCalls int
-	snapshotCalls   int
 	collected       int
 	fail            bool
 }
@@ -112,7 +111,7 @@ func (client *testPushClient) update(data RealtimeData, traces ...TraceSnapshot)
 
 func TestServerRegistersPullClientAndReadsDefinitionOnce(t *testing.T) {
 	server := NewServerWithConfig(ServerConfig{TraceLimit: 2})
-	defer server.Close(context.Background())
+	defer func() { _ = server.Close(context.Background()) }()
 
 	machine := &thirdPartyFSM{}
 	registration, err := server.Register(context.Background(), machine, RegistrationConfig{
@@ -171,7 +170,7 @@ func TestServerRegistersPullClientAndReadsDefinitionOnce(t *testing.T) {
 
 func TestServerPushOnlyUpdatesRealtimeData(t *testing.T) {
 	server := NewServerWithConfig(ServerConfig{TraceLimit: 2})
-	defer server.Close(context.Background())
+	defer func() { _ = server.Close(context.Background()) }()
 
 	client := &testPushClient{
 		definition: Definition{
@@ -248,7 +247,7 @@ func TestServerPushOnlyUpdatesRealtimeData(t *testing.T) {
 
 func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 	server := NewServer()
-	defer server.Close(context.Background())
+	defer func() { _ = server.Close(context.Background()) }()
 	httpServer := httptest.NewServer(server.Handler())
 	defer httpServer.Close()
 
@@ -335,7 +334,7 @@ func TestServerHTTPAPIWebSSEAndPushGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer streamResponse.Body.Close()
+	defer func() { _ = streamResponse.Body.Close() }()
 	events := make(chan streamEvent, 4)
 	go readStreamEvents(streamResponse.Body, events)
 	if event := waitStreamEvent(t, events); event.Type != "connected" {
@@ -408,7 +407,7 @@ func (client *configuredClient) VisualizationSnapshot(context.Context) (Realtime
 
 func TestServerRegistrationValidationAndModeIsolation(t *testing.T) {
 	server := NewServer()
-	defer server.Close(context.Background())
+	defer func() { _ = server.Close(context.Background()) }()
 
 	var nilClient *configuredClient
 	if _, err := server.Register(

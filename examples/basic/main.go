@@ -21,7 +21,7 @@ func (p *doorPayload) Category() string      { return "" }
 func main() {
 	payload := &doorPayload{Name: "仓库门", Authorized: true}
 	machine := fsm.NewFSM("door", "closed", payload)
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 
 	machine.SetTransitions(fsm.NewTransitionItem(
 		fsm.FSMEvent("open"),

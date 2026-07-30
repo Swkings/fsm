@@ -13,7 +13,7 @@ import (
 // ClientServerDiscovery 将服务发现返回的业务进程可视化 Server 展开为其中注册的多个 FSM。
 // Discovery 中每个 endpoint 都应指向一个由 Server 启动的可视化服务，而不是单个 FSM。
 type ClientServerDiscovery struct {
-	Discovery ServerDiscovery
+	Discovery ServerDiscoveryI
 	Client    *http.Client
 }
 
@@ -87,10 +87,10 @@ func remoteRegistrationID(serverKey, targetID string) string {
 }
 
 // RegisterClientServerDiscovery 注册业务进程可视化 Server 的发现源。
-// 发现到 Server 后会读取其 /api/targets，并将其中的 FSM 分别注册为远程 pull Client。
+// 发现到 Server 后会读取其 /api/targets，并将其中的 FSM 分别注册为远程 pull ClientI。
 func (server *Server) RegisterClientServerDiscovery(
 	ctx context.Context,
-	discovery ServerDiscovery,
+	discovery ServerDiscoveryI,
 	config DiscoveryConfig,
 ) (*DiscoveryRegistration, error) {
 	return server.RegisterDiscovery(ctx, &ClientServerDiscovery{Discovery: discovery}, config)

@@ -10,62 +10,10 @@ import (
 	"github.com/zeromicro/go-zero/core/conf"
 )
 
-type TemplateData struct {
-	FSMFileName string
-	FSMData     FSMData
-}
-
 const (
 	eventPrefix = "Event"
 	statePrefix = "State"
 )
-
-type FSMMetaInfo struct {
-	Name       string
-	Describe   string
-	Initial    string
-	Transition []string
-}
-
-type FSMYaml struct {
-	PackageDir       string
-	Package          string
-	FSMEnginePackage string
-	State            []string
-	Event            []string
-	FSM              FSMMetaInfo
-}
-
-type Symbol struct {
-	Identifier string
-	Value      string
-}
-
-type Transition struct {
-	From      string
-	FromName  string
-	To        string
-	ToName    string
-	Event     string
-	EventName string
-}
-
-type FSM struct {
-	Name        string
-	Describe    string
-	Initial     string
-	InitialName string
-	Transitions []Transition
-}
-
-type FSMData struct {
-	PackageDir       string
-	Package          string
-	FSMEnginePackage string
-	States           []Symbol
-	Events           []Symbol
-	FSM              FSM
-}
 
 func ParseFSMData(fsmYaml FSMYaml) (FSMData, error) {
 	packageDir := strings.TrimSpace(strings.TrimSuffix(fsmYaml.PackageDir, "/"))

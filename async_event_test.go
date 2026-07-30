@@ -11,7 +11,7 @@ import (
 
 func TestAsyncEventPriorityOrder(t *testing.T) {
 	machine := NewFSM("test", "idle", &testPayload{})
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 
 	blockStarted := make(chan struct{})
 	releaseBlock := make(chan struct{})
@@ -77,7 +77,7 @@ func TestAsyncEventPriorityOrder(t *testing.T) {
 
 func TestDirectProcessEventHasPriorityOverQueuedHighEvent(t *testing.T) {
 	machine := NewFSM("test", "idle", &testPayload{})
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 	var mu sync.Mutex
 	var order []string
 	machine.SetTransitions(
@@ -161,7 +161,8 @@ func TestAsyncEventExpiresWhileWaitingAndIsRemoved(t *testing.T) {
 		_ = machine.Close()
 	}()
 
-	receipt, notify, cancel := submitTrackedEvent(t, machine, "queued",
+	receipt, notify, cancel := submitTrackedEvent(
+		t, machine, "queued",
 		WithEventPriority(EventPriorityLow),
 		WithEventTTL(20*time.Millisecond),
 	)
@@ -222,7 +223,7 @@ func TestFireAndForgetExpirationRemovesEventWithoutRunningHandler(t *testing.T) 
 
 func TestAsyncEventExpirationDoesNotCancelRunningHandler(t *testing.T) {
 	machine := NewFSM("test", "idle", &testPayload{})
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 	started := make(chan struct{})
 	release := make(chan struct{})
 	machine.SetTransitions(NewTransitionItem("run", "idle", "done", Handler[*testPayload]{Handler: func(fsm *FSM[*testPayload], _ ...any) error {
@@ -280,7 +281,7 @@ func TestQueuedContextCancellationRemovesEventAndNotifies(t *testing.T) {
 
 func TestRunningAsyncEventObservesContextCancellation(t *testing.T) {
 	machine := NewFSM("test", "idle", &testPayload{})
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 	started := make(chan struct{})
 	machine.SetTransitions(NewTransitionItem("wait", "idle", "done", Handler[*testPayload]{
 		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
@@ -390,14 +391,15 @@ func TestCloseCancelsTrackedEventQueuedBehindDirectProcessing(t *testing.T) {
 
 func TestAsyncEventOptionValidationAndPairing(t *testing.T) {
 	machine := NewFSM("test", "idle", &testPayload{})
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 	if _, err := machine.SubmitEvent("event", WithEventPriority(99)); !errors.Is(err, ErrorInvalidEventPriority) {
 		t.Fatalf("invalid priority error = %v", err)
 	}
 	if _, err := machine.SubmitEvent("event", WithEventTTL(-time.Second)); !errors.Is(err, ErrorInvalidEventTTL) {
 		t.Fatalf("invalid TTL error = %v", err)
 	}
-	if _, err := machine.SubmitEvent("event", WithEventContext(nil)); !errors.Is(err, ErrorNilEventContext) {
+	var nilContext context.Context
+	if _, err := machine.SubmitEvent("event", WithEventContext(nilContext)); !errors.Is(err, ErrorNilEventContext) {
 		t.Fatalf("nil context error = %v", err)
 	}
 	var nilNotify chan AsyncEventResult
@@ -414,7 +416,7 @@ func TestAsyncEventOptionValidationAndPairing(t *testing.T) {
 
 func TestAsyncEventAbsoluteExpiration(t *testing.T) {
 	machine := NewFSM("test", "idle", &testPayload{})
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 	machine.SetTransitions(NewTransitionItem[*testPayload]("event", "idle", "done", Handler[*testPayload]{}))
 
 	receipt, notify, cancel := submitTrackedEvent(t, machine, "event", WithEventExpiresAt(time.Now().Add(-time.Millisecond)))

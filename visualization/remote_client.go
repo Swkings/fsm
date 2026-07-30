@@ -17,7 +17,7 @@ func (discover ServiceDiscoveryFunc) Discover(ctx context.Context) ([]Discovered
 	return discover(ctx)
 }
 
-// HTTPServiceDiscovery 自动识别注册中心服务列表接口或单个 Client Server 基础地址。
+// HTTPServiceDiscovery 自动识别注册中心服务列表接口或单个 ClientI Server 基础地址。
 type HTTPServiceDiscovery struct {
 	Endpoint  string
 	DirectKey string
@@ -122,7 +122,7 @@ func getRemoteJSON(ctx context.Context, client *http.Client, endpoint string, ta
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
 		return fmt.Errorf("remote endpoint returned %s: %s", response.Status, strings.TrimSpace(string(message)))
@@ -172,7 +172,7 @@ func (wire realtimeDataWire) realtimeData() RealtimeData {
 	}
 }
 
-func NewClientHandler(client Client) http.Handler {
+func NewClientHandler(client ClientI) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/definition", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {

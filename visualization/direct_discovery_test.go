@@ -19,7 +19,7 @@ func TestDiscoveryConfigurationHTTPAPIAcceptsDirectClientServerAddress(t *testin
 		data: RealtimeData{CurrentState: "idle"},
 	}
 	clientVisualizationServer := NewServer()
-	defer clientVisualizationServer.Close(context.Background())
+	defer func() { _ = clientVisualizationServer.Close(context.Background()) }()
 	if _, err := clientVisualizationServer.Register(context.Background(), client, RegistrationConfig{
 		DisplayName: "Direct Worker", Path: "workers",
 		Mode: ModePull, PullInterval: time.Hour,
@@ -30,7 +30,7 @@ func TestDiscoveryConfigurationHTTPAPIAcceptsDirectClientServerAddress(t *testin
 	defer clientHTTP.Close()
 
 	aggregate := NewServer()
-	defer aggregate.Close(context.Background())
+	defer func() { _ = aggregate.Close(context.Background()) }()
 	aggregateHTTP := httptest.NewServer(aggregate.Handler())
 	defer aggregateHTTP.Close()
 	body, _ := json.Marshal(discoveryRequest{
@@ -45,7 +45,7 @@ func TestDiscoveryConfigurationHTTPAPIAcceptsDirectClientServerAddress(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusCreated {
 		data, _ := io.ReadAll(response.Body)
 		t.Fatalf("create direct discovery status=%d body=%s", response.StatusCode, data)

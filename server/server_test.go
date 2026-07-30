@@ -92,7 +92,7 @@ func TestManagedServerMCPQueriesFSMWithLatestProtocol(t *testing.T) {
 	if err != nil {
 		t.Fatalf("connect MCP: %v", err)
 	}
-	defer session.Close()
+	defer func() { _ = session.Close() }()
 	if result := session.InitializeResult(); result == nil || result.ProtocolVersion != "2026-07-28" {
 		t.Fatalf("MCP protocol = %+v", result)
 	}

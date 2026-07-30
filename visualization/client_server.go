@@ -13,12 +13,12 @@ import (
 var ErrClientServerNotConfigured = errors.New("visualization client server is not configured")
 
 // VisualizationConfig 配置业务进程内的全局单例可视化 Server。
-// PathPrefix 会与各 Client 提供的 Path 组合；两者都允许为空。
+// PathPrefix 会与各 ClientI 提供的 Path 组合；两者都允许为空。
 type VisualizationConfig = config.Visualization
 
-// RegistrationConfigProvider 允许 Client 自行提供显示名称、目录和采集模式。
+// RegistrationConfigProviderI 允许 ClientI 自行提供显示名称、目录和采集模式。
 // fsm.FSM 会从 Payload 的 DisplayName() 与 Category() 方法生成该配置。
-type RegistrationConfigProvider interface {
+type RegistrationConfigProviderI interface {
 	VisualizationRegistrationConfig() RegistrationConfig
 }
 
@@ -49,9 +49,9 @@ func ClientServer() (*Server, bool) {
 	return processClientServer.server, processClientServer.server != nil
 }
 
-// RegisterClient 将 Client 注册到进程内全局 Server。
-// 注册元数据由可选的 RegistrationConfigProvider 提供，不再由调用方传入。
-func RegisterClient(ctx context.Context, client Client) (*Registration, error) {
+// RegisterClient 将 ClientI 注册到进程内全局 Server。
+// 注册元数据由可选的 RegistrationConfigProviderI 提供，不再由调用方传入。
+func RegisterClient(ctx context.Context, client ClientI) (*Registration, error) {
 	server, exists := ClientServer()
 	if !exists {
 		return nil, ErrClientServerNotConfigured
@@ -64,11 +64,11 @@ func RegisterClient(ctx context.Context, client Client) (*Registration, error) {
 	return server.Register(ctx, client, config)
 }
 
-func registrationConfigFromClient(client Client) (config RegistrationConfig, err error) {
+func registrationConfigFromClient(client ClientI) (config RegistrationConfig, err error) {
 	if isNilInterface(client) {
 		return RegistrationConfig{}, ErrInvalidClient
 	}
-	provider, exists := client.(RegistrationConfigProvider)
+	provider, exists := client.(RegistrationConfigProviderI)
 	if !exists {
 		return RegistrationConfig{}, nil
 	}

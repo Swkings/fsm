@@ -55,7 +55,7 @@ type ReplayRecordSummary struct {
 
 type replaySource struct {
 	id, name string
-	backend  store.Store
+	backend  store.StoreI
 	primary  bool
 	owned    bool
 	lastErr  string
@@ -90,7 +90,7 @@ func validReplaySourceID(id string) bool {
 	return id != "" && !strings.ContainsAny(id, `/\\`)
 }
 
-func (hub *replayHub) register(id, name string, backend store.Store, primary, owned bool) error {
+func (hub *replayHub) register(id, name string, backend store.StoreI, primary, owned bool) error {
 	id = strings.TrimSpace(id)
 	if !validReplaySourceID(id) {
 		return fmt.Errorf("invalid replay source id %q", id)
@@ -182,7 +182,7 @@ func (hub *replayHub) list(ctx context.Context, sourceID, key string, limit int)
 		summaries = append(summaries, ReplayRecordSummary{
 			ID: record.ID, SourceID: source.id, FSMID: record.Key,
 			DisplayName: record.DisplayName, Path: record.Category,
-			TransitionID: record.Metadata.TransitionID, State: record.Metadata.CurrentState,
+			TransitionID: record.Metadata.TransitionID, State: string(record.Metadata.CurrentState),
 			Event: record.Trace.Event, Success: record.Success, RecordedAt: record.RecordedAt,
 			Trace: storeTraceSnapshot(record.Trace),
 		})
@@ -235,9 +235,9 @@ func storeRecordSnapshot(record store.Record) Snapshot {
 	transitions := make([]TransitionSnapshot, 0, len(record.Transitions))
 	statesSet, eventsSet := map[string]struct{}{}, map[string]struct{}{}
 	for _, transition := range record.Transitions {
-		item := TransitionSnapshot{FromState: transition.FromState, Event: transition.Event, ToState: transition.ToState}
+		item := TransitionSnapshot(transition)
 		transitions = append(transitions, item)
-		statesSet[item.FromState], statesSet[item.ToState], eventsSet[item.Event] = struct{}{}, struct{}{}, struct{}{}
+		statesSet[string(item.FromState)], statesSet[string(item.ToState)], eventsSet[string(item.Event)] = struct{}{}, struct{}{}, struct{}{}
 	}
 	states, events := make([]string, 0, len(statesSet)), make([]string, 0, len(eventsSet))
 	for state := range statesSet {
@@ -260,12 +260,12 @@ func storeRecordSnapshot(record store.Record) Snapshot {
 	}
 	displayName := record.DisplayName
 	if displayName == "" {
-		displayName = metadata.Name
+		displayName = string(metadata.Name)
 	}
 	snapshot := Snapshot{
-		Descriptor: Descriptor{ID: metadata.InstanceID, Name: metadata.Name, DisplayName: displayName, Description: metadata.Description, Path: record.Category},
-		Mode:       ModePush, TransitionID: metadata.TransitionID, CurrentState: metadata.CurrentState,
-		PreviousState: metadata.PreviousState, PreviousEvent: metadata.PreviousEvent,
+		Descriptor: Descriptor{ID: metadata.InstanceID, Name: string(metadata.Name), DisplayName: displayName, Description: metadata.Description, Path: record.Category},
+		Mode:       ModePush, TransitionID: metadata.TransitionID, CurrentState: string(metadata.CurrentState),
+		PreviousState: string(metadata.PreviousState), PreviousEvent: string(metadata.PreviousEvent),
 		Payload: append([]byte(nil), metadata.Payload...), States: states, Events: events,
 		Transitions: transitions, AvailableTransitions: available, Traces: traces, UpdatedAt: record.RecordedAt,
 	}
@@ -290,17 +290,11 @@ func storeTraceSnapshot(trace store.Trace) TraceSnapshot {
 }
 
 func storeMetadataSnapshot(metadata store.Metadata) MetadataSnapshot {
-	return MetadataSnapshot{
-		InstanceID: metadata.InstanceID, TransitionID: metadata.TransitionID,
-		Name: metadata.Name, Description: metadata.Description,
-		PreviousState: metadata.PreviousState, PreviousEvent: metadata.PreviousEvent,
-		CurrentState: metadata.CurrentState, ProcessingEvent: metadata.ProcessingEvent,
-		Payload: append([]byte(nil), metadata.Payload...), PayloadError: metadata.PayloadError,
-	}
+	return metadata.Clone()
 }
 
 // RegisterReplayStore 将 FSM Store 暴露给 Replay 页面。Store 生命周期仍由调用方管理。
-func (server *Server) RegisterReplayStore(id, name string, backend store.Store) error {
+func (server *Server) RegisterReplayStore(id, name string, backend store.StoreI) error {
 	return server.replays.register(id, name, backend, id == "primary", false)
 }
 

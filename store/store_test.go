@@ -92,7 +92,7 @@ func TestRedisStoreLifecycle(t *testing.T) {
 	testStoreLifecycle(t, backend)
 }
 
-func testStoreLifecycle(t *testing.T, backend Store) {
+func testStoreLifecycle(t *testing.T, backend StoreI) {
 	t.Helper()
 	suffix := fmt.Sprintf("%s-%d", strings.ToLower(t.Name()), time.Now().UnixNano())
 	record := Record{

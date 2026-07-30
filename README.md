@@ -70,6 +70,12 @@ services.Add(s)
 
 Store 仅在配置了 `Driver`、JSONL、MySQL 或 Redis 字段时创建；Visualization 仅在 `ServerAddress` 非空时监听；MCP 仅在 `Enabled: true` 或 `ServerAddress` 非空时启动。直接调用 `store.New(config.Store{})` 时仍保留默认 JSONL 行为。
 
+## 包分层与扩展接口
+
+无行为的数据模型集中在 `ds`：根级 `ds` 保存 FSM 与跨模块协议公用模型，`store/ds`、`visualization/ds`、`mcp/ds` 和 `gen/ds` 保存领域模型。日常调用仍可使用 `fsm.FSMState`、`store.Record`、`visualization.Snapshot` 等便捷别名，无需为了常用操作额外导入 `ds`。
+
+仓库提供的接口统一使用 `I` 后缀，包括 `fsm.PayloadI`、`store.StoreI`、`server.RegisterableFSMI`、`visualization.ClientI` 和 `visualization.PushClientI`。旧接口名称不再提供兼容别名；从旧版本迁移时只需更新类型约束与接口声明，实现方法本身不变。
+
 ## 使用模板生成代码
 
 ```bash
@@ -115,7 +121,7 @@ FSM:
 
 任一阶段返回错误都会终止转移，目标状态不会提交，错误会同时写入 `TransitionTrace`。Payload 内部业务数据不会自动回滚，需要 Handler 自行保证事务或补偿。
 
-事件参数可通过 `ProcessEvent(event, params...)` 或 `ProcessEventContext(ctx, event, params...)` 传入。Payload 在创建 FSM 时以指针传入，泛型 `T` 因而是 `*Payload`；调用方和 Handler 始终修改同一个对象。`BeforeHandler`、`Handler` 和 `AfterHandler` 统一使用 `Actor[T]` 签名：`func(*FSM[T], ...any) error`。不使用参数时可将其命名为 `_ ...any`：
+事件参数可通过 `ProcessEvent(event, params...)` 或 `ProcessEventWithContext(ctx, event, params...)` 传入。Payload 在创建 FSM 时以指针传入，泛型 `T` 因而是 `*Payload`；调用方和 Handler 始终修改同一个对象。`BeforeHandler`、`Handler` 和 `AfterHandler` 统一使用 `Actor[T]` 签名：`func(*FSM[T], ...any) error`。不使用参数时可将其命名为 `_ ...any`：
 
 ```go
 payload := &Payload{TargetHealth: 100}
@@ -148,7 +154,7 @@ fmt.Println(metadata.CurrentState, metadata.PreviousEvent)
 
 `SubmitEvent` 会把事件放入状态机内部队列。默认事件为高优先级、永不过期；同一优先级按提交顺序执行。调度优先级为：
 
-1. 尚未开始执行的直接 `ProcessEvent` 或 `ProcessEventContext` 调用。
+1. 尚未开始执行的直接 `ProcessEvent` 或 `ProcessEventWithContext` 调用。
 2. 高优先级异步事件。
 3. 低优先级异步事件。
 
@@ -303,22 +309,22 @@ paymentRegistration, err := visualization.RegisterClient(ctx, paymentFSM)
 
 `PathPrefix` 与 Payload 的 `Category()` 使用 `/` 组合，例如上例最终目录为 `production/orders/checkout`；两者都允许为空。Payload 对应方法返回空字符串时，显示名称回退到 FSM 名称，目录仅使用非空部分。
 
-内置 `fsm.FSM` 已实现 `visualization.PushClient`。注册时 Server 只读取一次完整 `Definition`；注册完成后，FSM 事件结束会将 `RealtimeData` 和增量 Trace 主动推送到 Client Server。取消注册 context、调用 `Unregister` 或关闭 Client Server 都会移除订阅。
+内置 `fsm.FSM` 已实现 `visualization.PushClientI`。注册时 Server 只读取一次完整 `Definition`；注册完成后，FSM 事件结束会将 `RealtimeData` 和增量 Trace 主动推送到 Client Server。取消注册 context、调用 `Unregister` 或关闭 Client Server 都会移除订阅。
 
-第三方状态机可以实现相同接口。实现 `PushClient` 时默认采用 Push；只实现 `Client` 时默认采用 Pull。需要指定显示信息、目录、模式或 Pull 周期时，由 Client 实现 `RegistrationConfigProvider`：
+第三方状态机可以实现相同接口。实现 `PushClientI` 时默认采用 Push；只实现 `ClientI` 时默认采用 Pull。需要指定显示信息、目录、模式或 Pull 周期时，由客户端实现 `RegistrationConfigProviderI`：
 
 ```go
-type Client interface {
+type ClientI interface {
     VisualizationDefinition() Definition
     VisualizationSnapshot(context.Context) (RealtimeData, error)
 }
 
-type PushClient interface {
-    Client
+type PushClientI interface {
+    ClientI
     SubscribeVisualization(PublishFunc) func()
 }
 
-type RegistrationConfigProvider interface {
+type RegistrationConfigProviderI interface {
     VisualizationRegistrationConfig() RegistrationConfig
 }
 ```

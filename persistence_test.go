@@ -31,7 +31,7 @@ func TestFSMRestoresLatestSuccessfulStoreRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 
 	first := persistentMachine(&persistentPayload{})
 	if err = first.BindStore(context.Background(), backend, "player-1"); err != nil {
@@ -44,11 +44,11 @@ func TestFSMRestoresLatestSuccessfulStoreRecord(t *testing.T) {
 		t.Fatal("missing event should fail")
 	}
 	instanceID, transitionID := first.InstanceID, first.TtId
-	first.Close()
+	_ = first.Close()
 
 	restartedPayload := &persistentPayload{Count: 99}
 	restarted := persistentMachine(restartedPayload)
-	defer restarted.Close()
+	defer func() { _ = restarted.Close() }()
 	if err = restarted.BindStore(context.Background(), backend, "player-1"); err != nil {
 		t.Fatalf("restore FSM: %v", err)
 	}

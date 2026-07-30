@@ -6,13 +6,6 @@ import (
 	"sort"
 )
 
-type HandlerData struct {
-	PackageDir       string
-	Package          string
-	FSMEnginePackage string
-	Transition       Transition
-}
-
 func GenHandlers(outFile string, fsmFileName string, tplFileDir string, data FSMData, override bool) error {
 	if err := CreateFSMDirLevel(filepath.Join(outFile, data.Package), "handlers"); err != nil {
 		return err

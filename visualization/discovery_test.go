@@ -89,7 +89,7 @@ func TestHTTPServiceDiscoveryAutomaticallyRegistersPullsAndRemovesFSM(t *testing
 	})
 
 	server := NewServer()
-	defer server.Close(context.Background())
+	defer func() { _ = server.Close(context.Background()) }()
 	registration, err := server.RegisterDiscovery(context.Background(), &HTTPServiceDiscovery{
 		Endpoint: discoveryServer.URL,
 	}, DiscoveryConfig{
@@ -142,7 +142,7 @@ func TestDiscoveryConfigurationHTTPAPI(t *testing.T) {
 		data:       RealtimeData{CurrentState: "idle"},
 	}
 	clientVisualizationServer := NewServer()
-	defer clientVisualizationServer.Close(context.Background())
+	defer func() { _ = clientVisualizationServer.Close(context.Background()) }()
 	if _, err := clientVisualizationServer.Register(context.Background(), client, RegistrationConfig{
 		Mode: ModePull, PullInterval: time.Hour,
 	}); err != nil {
@@ -156,7 +156,7 @@ func TestDiscoveryConfigurationHTTPAPI(t *testing.T) {
 	defer discoveryServer.Close()
 
 	server := NewServer()
-	defer server.Close(context.Background())
+	defer func() { _ = server.Close(context.Background()) }()
 	webServer := httptest.NewServer(server.Handler())
 	defer webServer.Close()
 

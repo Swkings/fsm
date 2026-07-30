@@ -34,7 +34,7 @@ func TestRegisterClientUsesPayloadMetadataAndServerPathPrefix(t *testing.T) {
 	}
 	payload := &visualizationMetadataPayload{Name: "Player One", SubPath: "online"}
 	machine := NewFSM("player", FSMState("idle"), payload)
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 	registration, err := visualization.RegisterClient(context.Background(), machine)
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestRegisterClientAllowsEmptyPathPrefixAndPayloadCategory(t *testing.T) {
 	}
 	payload := &visualizationMetadataPayload{Name: "Root Player"}
 	machine := NewFSM("player", FSMState("idle"), payload)
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 	registration, err := visualization.RegisterClient(context.Background(), machine)
 	if err != nil {
 		t.Fatal(err)

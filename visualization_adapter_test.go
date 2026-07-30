@@ -19,10 +19,10 @@ func (p *visualizationTestPayload) Category() string      { return "" }
 
 func TestFSMImplementsPushClientDirectly(t *testing.T) {
 	server := visualization.NewServerWithConfig(visualization.ServerConfig{TraceLimit: 2})
-	defer server.Close(context.Background())
+	defer func() { _ = server.Close(context.Background()) }()
 	machine := NewFSM("door", FSMState("closed"), &visualizationTestPayload{})
 	machine.Describe = "warehouse door state machine"
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 	machine.SetTransitions(NewTransitionItem(
 		"open",
 		"closed",
@@ -32,7 +32,7 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 			return nil
 		}},
 	))
-	var client visualization.PushClient = machine
+	var client visualization.PushClientI = machine
 	registration, err := server.Register(context.Background(), client, visualization.RegistrationConfig{
 		DisplayName: "Warehouse Door",
 		Path:        "production/doors",
@@ -110,7 +110,7 @@ func (d *emptyPayload) Category() string      { return "" }
 func TestFSMUsesDefaultVisualizationConfig(t *testing.T) {
 	server := visualization.NewServer()
 	machine := NewFSM("job", FSMState("idle"), &emptyPayload{})
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 
 	registration, err := server.Register(context.Background(), machine, visualization.RegistrationConfig{})
 	if err != nil {

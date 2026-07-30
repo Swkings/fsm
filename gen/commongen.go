@@ -5,14 +5,6 @@ import (
 	"path/filepath"
 )
 
-type CommonData struct {
-	PackageDir       string
-	Package          string
-	FSMEnginePackage string
-	HandleItemList   []*HandlerData
-	FSMFileName      string
-}
-
 func GenCommons(outFile string, fsmFileName string, tplFileDir string, data FSMData) error {
 	if err := CreateFSMDirLevel(filepath.Join(outFile, data.Package), "handlers"); err != nil {
 		return err

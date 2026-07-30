@@ -53,7 +53,7 @@ func run(ctx context.Context, configPath string) error {
 		Stamina:      100,
 	}
 	machine := player.NewFSMPlayerAction(payload)
-	defer machine.Close()
+	defer func() { _ = machine.Close() }()
 	if err = machine.Register(s); err != nil {
 		return fmt.Errorf("register generated player: %w", err)
 	}

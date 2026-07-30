@@ -54,7 +54,7 @@ func TestReplayReadsFSMStoreWithoutOwningPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 	record := store.Record{
 		ID: "record-1", Key: "player-1", DisplayName: "Player One", Category: "examples/player",
 		RecordedAt: time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC), Success: true,

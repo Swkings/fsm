@@ -44,13 +44,13 @@ func (fsm *FSM[T]) visualizeForMermaidAsStateDiagram() string {
 	buf.WriteString("```mermaid\n")
 	buf.WriteString("stateDiagram-v2\n")
 	for _, state := range sortedStates {
-		buf.WriteString(fmt.Sprintf("    state %s as %s\n", strconv.Quote(string(state)), statesToIDMap[string(state)]))
+		fmt.Fprintf(&buf, "    state %s as %s\n", strconv.Quote(string(state)), statesToIDMap[string(state)])
 	}
-	buf.WriteString(fmt.Sprintf("    [*] --> %s\n", statesToIDMap[string(currentState)]))
+	fmt.Fprintf(&buf, "    [*] --> %s\n", statesToIDMap[string(currentState)])
 
 	for _, key := range sortedTransitionKeys {
 		target := transitions[key]
-		buf.WriteString(fmt.Sprintf("    %s --> %s: %s\n", statesToIDMap[string(key.FromState)], statesToIDMap[string(target)], strconv.Quote(string(key.Event))))
+		fmt.Fprintf(&buf, "    %s --> %s: %s\n", statesToIDMap[string(key.FromState)], statesToIDMap[string(target)], strconv.Quote(string(key.Event)))
 	}
 
 	buf.WriteString("```\n")
@@ -80,7 +80,7 @@ func writeFlowChartGraphType(buf *bytes.Buffer) {
 // writeFlowChartStates 按稳定顺序写入状态节点及其内部节点 ID。
 func writeFlowChartStates(buf *bytes.Buffer, sortedStates []FSMState, statesToIDMap map[string]string) {
 	for _, state := range sortedStates {
-		buf.WriteString(fmt.Sprintf(`    %s[%s]`, statesToIDMap[string(state)], strconv.Quote(string(state))))
+		fmt.Fprintf(buf, `    %s[%s]`, statesToIDMap[string(state)], strconv.Quote(string(state)))
 		buf.WriteString("\n")
 	}
 
@@ -91,7 +91,7 @@ func writeFlowChartStates(buf *bytes.Buffer, sortedStates []FSMState, statesToID
 func writeFlowChartTransitions(buf *bytes.Buffer, transitions map[EventStateKey]FSMState, sortedTransitionKeys []EventStateKey, statesToIDMap map[string]string) {
 	for _, transition := range sortedTransitionKeys {
 		target := transitions[transition]
-		buf.WriteString(fmt.Sprintf(`    %s -->|%s| %s`, statesToIDMap[string(transition.FromState)], strconv.Quote(string(transition.Event)), statesToIDMap[string(target)]))
+		fmt.Fprintf(buf, `    %s -->|%s| %s`, statesToIDMap[string(transition.FromState)], strconv.Quote(string(transition.Event)), statesToIDMap[string(target)])
 		buf.WriteString("\n")
 	}
 	buf.WriteString("\n")
@@ -99,7 +99,7 @@ func writeFlowChartTransitions(buf *bytes.Buffer, transitions map[EventStateKey]
 
 // writeFlowChartHighlightCurrent 为当前状态对应的节点写入高亮样式。
 func writeFlowChartHighlightCurrent(buf *bytes.Buffer, current string, statesToIDMap map[string]string) {
-	buf.WriteString(fmt.Sprintf(`    style %s fill:%s`, statesToIDMap[current], highlightingColor))
+	fmt.Fprintf(buf, `    style %s fill:%s`, statesToIDMap[current], highlightingColor)
 	buf.WriteString("\n")
 }
 
