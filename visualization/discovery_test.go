@@ -24,6 +24,7 @@ func (client *remoteTestClient) VisualizationDefinition() Definition {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	client.definitionCalls++
+
 	return cloneDefinition(client.definition)
 }
 
@@ -31,6 +32,7 @@ func (client *remoteTestClient) VisualizationSnapshot(context.Context) (Realtime
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	client.realtimeCalls++
+
 	return cloneRealtimeData(client.data), nil
 }
 
@@ -44,6 +46,7 @@ func (client *remoteTestClient) updateState(state string) {
 func (client *remoteTestClient) calls() (int, int) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
+
 	return client.definitionCalls, client.realtimeCalls
 }
 
@@ -102,6 +105,7 @@ func TestHTTPServiceDiscoveryAutomaticallyRegistersPullsAndRemovesFSM(t *testing
 
 	waitFor(t, func() bool {
 		snapshot, ok := server.Snapshot("remote-door")
+
 		return ok && snapshot.CurrentState == "closed" && snapshot.Path == "production/warehouse/doors"
 	})
 	definitionCalls, realtimeCalls := client.calls()
@@ -112,6 +116,7 @@ func TestHTTPServiceDiscoveryAutomaticallyRegistersPullsAndRemovesFSM(t *testing
 	client.updateState("opened")
 	waitFor(t, func() bool {
 		snapshot, ok := server.Snapshot("remote-door")
+
 		return ok && snapshot.CurrentState == "opened" &&
 			len(snapshot.AvailableTransitions) == 1 &&
 			snapshot.AvailableTransitions[0].Event == "close"
@@ -124,6 +129,7 @@ func TestHTTPServiceDiscoveryAutomaticallyRegistersPullsAndRemovesFSM(t *testing
 	fixture.set()
 	waitFor(t, func() bool {
 		_, ok := server.Snapshot("remote-door")
+
 		return !ok
 	})
 	if !registration.Unregister() {
@@ -175,6 +181,7 @@ func TestDiscoveryConfigurationHTTPAPI(t *testing.T) {
 	_ = response.Body.Close()
 	waitFor(t, func() bool {
 		snapshot, ok := server.Snapshot("remote:worker:api-worker")
+
 		return ok && snapshot.Path == "external/workers"
 	})
 
@@ -212,6 +219,7 @@ func TestDiscoveryConfigurationHTTPAPI(t *testing.T) {
 	_ = response.Body.Close()
 	waitFor(t, func() bool {
 		_, ok := server.Snapshot("remote:worker:api-worker")
+
 		return !ok
 	})
 }

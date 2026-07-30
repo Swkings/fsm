@@ -54,6 +54,7 @@ func (fsm *FSM[T]) visualizeForMermaidAsStateDiagram() string {
 	}
 
 	buf.WriteString("```\n")
+
 	return buf.String()
 }
 
@@ -114,5 +115,6 @@ func (fsm *FSM[T]) VisualizeMermaid(outFile string) error {
 	if err := os.WriteFile(outFile, []byte(code), 0o644); err != nil {
 		return fmt.Errorf("write mermaid file %q: %w", outFile, err)
 	}
+
 	return nil
 }

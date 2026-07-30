@@ -33,15 +33,18 @@ func main() {
 				if !machine.Payload.Authorized {
 					return errors.New("没有开门权限")
 				}
+
 				return nil
 			},
 			Handler: func(machine *fsm.FSM[*doorPayload], _ ...any) error {
 				machine.Payload.Stages = append(machine.Payload.Stages, "handler")
 				fmt.Printf("正在打开%s\n", machine.Payload.Name)
+
 				return nil
 			},
 			AfterHandler: func(machine *fsm.FSM[*doorPayload], _ ...any) error {
 				machine.Payload.Stages = append(machine.Payload.Stages, "after")
+
 				return nil
 			},
 		},

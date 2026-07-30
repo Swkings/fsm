@@ -48,6 +48,7 @@ func (worker *externalWorker) VisualizationDefinition() visualization.Definition
 func (worker *externalWorker) VisualizationSnapshot(context.Context) (visualization.RealtimeData, error) {
 	worker.mu.RLock()
 	defer worker.mu.RUnlock()
+
 	return visualization.RealtimeData{CurrentState: worker.state}, nil
 }
 
@@ -75,6 +76,7 @@ func main() {
 	door.SetTransitions(
 		fsm.NewTransitionItem("open", "closed", "opened", fsm.Handler[*doorPayload]{Handler: func(machine *fsm.FSM[*doorPayload], _ ...any) error {
 			machine.Payload.OpenCount++
+
 			return nil
 		}}),
 		fsm.NewTransitionItem[*doorPayload]("close", "opened", "closed", fsm.Handler[*doorPayload]{}),

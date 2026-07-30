@@ -20,5 +20,6 @@ func GenCommons(outFile string, fsmFileName string, tplFileDir string, data FSMD
 
 	outputPath := filepath.Join(outFile, data.Package, "handlers", "common.go")
 	fmt.Printf("gen commonFile: %v\n", outputPath)
+
 	return renderTemplateFile(outputPath, filepath.Join(tplFileDir, "common.tpl"), commonData)
 }

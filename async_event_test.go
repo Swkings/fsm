@@ -28,14 +28,17 @@ func TestAsyncEventPriorityOrder(t *testing.T) {
 			close(blockStarted)
 			<-releaseBlock
 			appendOrder("direct")
+
 			return nil
 		}}),
 		NewTransitionItem("low", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			appendOrder("low")
+
 			return nil
 		}}),
 		NewTransitionItem("high", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			appendOrder("high")
+
 			return nil
 		}}),
 	)
@@ -85,12 +88,14 @@ func TestDirectProcessEventHasPriorityOverQueuedHighEvent(t *testing.T) {
 			mu.Lock()
 			order = append(order, "direct")
 			mu.Unlock()
+
 			return nil
 		}}),
 		NewTransitionItem("queued", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			mu.Lock()
 			order = append(order, "queued")
 			mu.Unlock()
+
 			return nil
 		}}),
 	)
@@ -134,6 +139,7 @@ func TestSubmitEventWithoutContextAndNotifyIsFireAndForget(t *testing.T) {
 			t.Error("fire-and-forget event unexpectedly received a cancelable context")
 		}
 		close(ran)
+
 		return nil
 	}}))
 
@@ -187,6 +193,7 @@ func TestFireAndForgetExpirationRemovesEventWithoutRunningHandler(t *testing.T) 
 	var ran atomic.Bool
 	machine.SetTransitions(NewTransitionItem("expire", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 		ran.Store(true)
+
 		return nil
 	}}))
 
@@ -232,6 +239,7 @@ func TestAsyncEventExpirationDoesNotCancelRunningHandler(t *testing.T) {
 		}
 		close(started)
 		<-release
+
 		return fsm.GetEventContext().Err()
 	}}))
 
@@ -287,6 +295,7 @@ func TestRunningAsyncEventObservesContextCancellation(t *testing.T) {
 		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			close(started)
 			<-fsm.GetEventContext().Done()
+
 			return nil
 		},
 	}))
@@ -319,6 +328,7 @@ func TestCloseCancelsRunningTrackedEvent(t *testing.T) {
 		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			close(started)
 			<-fsm.GetEventContext().Done()
+
 			return nil
 		},
 	}))
@@ -344,6 +354,7 @@ func TestCloseWaitsForRunningFireAndForgetEvent(t *testing.T) {
 	machine.SetTransitions(NewTransitionItem("wait", "idle", "done", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 		close(started)
 		<-release
+
 		return nil
 	}}))
 
@@ -462,6 +473,7 @@ func submitTrackedEvent(
 		cancel()
 		t.Fatal("tracked event receipt = nil")
 	}
+
 	return receipt, notify, cancel
 }
 
@@ -474,12 +486,14 @@ func newBlockedFSM(t *testing.T) (*FSM[*testPayload], chan struct{}) {
 		NewTransitionItem("block", "idle", "idle", Handler[*testPayload]{Handler: func(_ *FSM[*testPayload], _ ...any) error {
 			close(started)
 			<-release
+
 			return nil
 		}}),
 		NewTransitionItem[*testPayload]("queued", "idle", "idle", Handler[*testPayload]{}),
 	)
 	go func() { _, _ = machine.ProcessEvent("block") }()
 	waitSignal(t, started, "blocking event start")
+
 	return machine, release
 }
 
@@ -491,6 +505,7 @@ func waitReceipt(t *testing.T, receipt *AsyncEventReceipt) AsyncEventResult {
 	if err != nil {
 		t.Fatalf("receipt.Wait() error = %v", err)
 	}
+
 	return result
 }
 
@@ -501,6 +516,7 @@ func waitNotification(t *testing.T, notify <-chan AsyncEventResult) AsyncEventRe
 		return result
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for event notification")
+
 		return AsyncEventResult{}
 	}
 }

@@ -23,18 +23,22 @@ var frontendFiles = func() fs.FS {
 	if err != nil {
 		panic(err)
 	}
+
 	return files
 }()
 
 func newFrontendHandler() http.Handler {
 	fileServer := http.FileServer(http.FS(frontendFiles))
+
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if strings.HasPrefix(request.URL.Path, "/api/") {
 			http.NotFound(writer, request)
+
 			return
 		}
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			writer.WriteHeader(http.StatusMethodNotAllowed)
+
 			return
 		}
 
@@ -47,6 +51,7 @@ func newFrontendHandler() http.Handler {
 			// proper 404s instead of receiving HTML as a JavaScript response.
 			if path.Ext(assetPath) != "" {
 				http.NotFound(writer, request)
+
 				return
 			}
 			assetPath = "index.html"
@@ -56,6 +61,7 @@ func newFrontendHandler() http.Handler {
 			content, err := fs.ReadFile(frontendFiles, assetPath)
 			if err != nil {
 				http.Error(writer, "frontend index is unavailable", http.StatusInternalServerError)
+
 				return
 			}
 			writer.Header().Set("Cache-Control", "no-cache")
@@ -63,6 +69,7 @@ func newFrontendHandler() http.Handler {
 			if request.Method != http.MethodHead {
 				_, _ = writer.Write(content)
 			}
+
 			return
 		}
 		if strings.HasPrefix(assetPath, "assets/") {

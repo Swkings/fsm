@@ -80,6 +80,7 @@ func (fsm *FSM[T]) VisualizationRegistrationConfig() visualization.RegistrationC
 	if isNilPayload(payload) {
 		return visualization.RegistrationConfig{}
 	}
+
 	return visualization.RegistrationConfig{
 		DisplayName: payload.DisplayName(),
 		Path:        payload.Category(),
@@ -97,6 +98,7 @@ func (fsm *FSM[T]) VisualizationSnapshot(ctx context.Context) (visualization.Rea
 	if err := ctx.Err(); err != nil {
 		return visualization.RealtimeData{}, err
 	}
+
 	return fsm.runtimeVisualizationData(), nil
 }
 
@@ -107,10 +109,12 @@ func (fsm *FSM[T]) SubscribeVisualization(publish visualization.PublishFunc) fun
 		return func() {}
 	}
 	observerID := uuid.NewString()
+
 	return fsm.addRuntimeObserver(observerID, func(trace *TransitionTrace) {
 		data := fsm.runtimeVisualizationData()
 		if trace == nil {
 			_ = publish(data)
+
 			return
 		}
 		_ = publish(data, newVisualizationTraceSnapshot(*trace))
@@ -123,6 +127,7 @@ func (fsm *FSM[T]) runtimeVisualizationData() visualization.RealtimeData {
 	if metadata.PayloadError != "" {
 		payloadError = errors.New(metadata.PayloadError)
 	}
+
 	return visualization.RealtimeData{
 		TransitionID:    metadata.TransitionID,
 		CurrentState:    string(metadata.CurrentState),
@@ -155,6 +160,7 @@ func newVisualizationTraceSnapshot(trace TransitionTrace) visualization.TraceSna
 	if trace.Error != nil {
 		errorMessage = trace.Error.Error()
 	}
+
 	return visualization.TraceSnapshot{
 		TransitionID:  trace.TtId,
 		PreviousID:    trace.PrevTtId,
@@ -177,6 +183,7 @@ func (fsm *FSM[T]) addRuntimeObserver(id string, observer func(*TransitionTrace)
 	fsm.runtimeObservers[id] = observer
 	fsm.runtimeObserverLock.Unlock()
 	var once sync.Once
+
 	return func() {
 		once.Do(func() {
 			fsm.runtimeObserverLock.Lock()
@@ -189,12 +196,14 @@ func (fsm *FSM[T]) addRuntimeObserver(id string, observer func(*TransitionTrace)
 func (fsm *FSM[T]) hasRuntimeObservers() bool {
 	fsm.runtimeObserverLock.RLock()
 	defer fsm.runtimeObserverLock.RUnlock()
+
 	return len(fsm.runtimeObservers) > 0
 }
 
 func (fsm *FSM[T]) rejectedRuntimeEventTrace(event FSMEvent, err error) TransitionTrace {
 	trace := fsm.rejectedEventTrace(event, err)
 	fsm.notifyRuntimeObservers(&trace)
+
 	return trace
 }
 

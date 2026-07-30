@@ -21,5 +21,6 @@ func PrettyMapStruct(v interface{}, indent bool) interface{} {
 	if err != nil {
 		return v
 	}
+
 	return out.String()
 }

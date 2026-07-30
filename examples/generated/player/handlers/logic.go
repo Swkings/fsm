@@ -80,6 +80,7 @@ func handleAttackTransition(
 
 	machine.Payload.TargetHealth = max(0, machine.Payload.TargetHealth-attack.Damage)
 	machine.Payload.LastAttackDamage = attack.Damage
+
 	return nil
 }
 
@@ -103,5 +104,6 @@ func parseAttackParams(params []any) (types.AttackParams, error) {
 	if attack.Damage <= 0 {
 		return types.AttackParams{}, errors.New("attack damage must be greater than zero")
 	}
+
 	return attack, nil
 }

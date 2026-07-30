@@ -28,6 +28,7 @@ func (machine *thirdPartyFSM) VisualizationDefinition() Definition {
 	machine.mu.Lock()
 	machine.definitionCalls++
 	machine.mu.Unlock()
+
 	return Definition{
 		ID:          "third-party-order",
 		Name:        "order",
@@ -53,12 +54,14 @@ func (machine *thirdPartyFSM) VisualizationSnapshot(context.Context) (RealtimeDa
 		state = "running"
 	}
 	payload, _ := json.Marshal(map[string]any{"collected": machine.collected})
+
 	return RealtimeData{CurrentState: state, Payload: payload}, nil
 }
 
 func (machine *thirdPartyFSM) counts() (definitionCalls, collected int) {
 	machine.mu.Lock()
 	defer machine.mu.Unlock()
+
 	return machine.definitionCalls, machine.collected
 }
 
@@ -76,6 +79,7 @@ func (client *testPushClient) VisualizationDefinition() Definition {
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	client.definitionCalls++
+
 	return cloneDefinition(client.definition)
 }
 
@@ -83,6 +87,7 @@ func (client *testPushClient) VisualizationSnapshot(context.Context) (RealtimeDa
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	client.snapshotCalls++
+
 	return cloneRealtimeData(client.data), nil
 }
 
@@ -90,6 +95,7 @@ func (client *testPushClient) SubscribeVisualization(publish PublishFunc) func()
 	client.mu.Lock()
 	client.publish = publish
 	client.mu.Unlock()
+
 	return func() {
 		client.mu.Lock()
 		client.publish = nil
@@ -106,6 +112,7 @@ func (client *testPushClient) update(data RealtimeData, traces ...TraceSnapshot)
 	if publish == nil {
 		return errors.New("push client is not subscribed")
 	}
+
 	return publish(data, traces...)
 }
 
@@ -128,6 +135,7 @@ func TestServerRegistersPullClientAndReadsDefinitionOnce(t *testing.T) {
 	}
 	waitFor(t, func() bool {
 		_, collected := machine.counts()
+
 		return collected >= 2
 	})
 
@@ -156,6 +164,7 @@ func TestServerRegistersPullClientAndReadsDefinitionOnce(t *testing.T) {
 	machine.mu.Unlock()
 	waitFor(t, func() bool {
 		current, _ := server.Snapshot(registration.ID())
+
 		return strings.Contains(current.CollectionError, "collector unavailable")
 	})
 	if !registration.Unregister() {
@@ -567,6 +576,7 @@ func waitStreamEvent(t *testing.T, events <-chan streamEvent) streamEvent {
 		return event
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for visualization SSE event")
+
 		return streamEvent{}
 	}
 }

@@ -39,6 +39,7 @@ func newClientServer(config VisualizationConfig) *Server {
 	})
 	server.pathPrefix = strings.TrimSpace(config.PathPrefix)
 	processClientServer.server = server
+
 	return server
 }
 
@@ -46,6 +47,7 @@ func newClientServer(config VisualizationConfig) *Server {
 func ClientServer() (*Server, bool) {
 	processClientServer.RLock()
 	defer processClientServer.RUnlock()
+
 	return processClientServer.server, processClientServer.server != nil
 }
 
@@ -61,6 +63,7 @@ func RegisterClient(ctx context.Context, client ClientI) (*Registration, error) 
 		return nil, err
 	}
 	config.Path = joinClientPath(server.pathPrefix, config.Path)
+
 	return server.Register(ctx, client, config)
 }
 
@@ -77,6 +80,7 @@ func registrationConfigFromClient(client ClientI) (config RegistrationConfig, er
 			err = fmt.Errorf("%w: registration config panic: %v", ErrInvalidClient, recovered)
 		}
 	}()
+
 	return provider.VisualizationRegistrationConfig(), nil
 }
 
@@ -89,6 +93,7 @@ func joinClientPath(prefix, path string) string {
 	if path == "" {
 		return prefix
 	}
+
 	return prefix + "/" + path
 }
 
@@ -98,6 +103,7 @@ func ClientServerURL() string {
 	if !exists {
 		return ""
 	}
+
 	return server.URL()
 }
 
@@ -111,5 +117,6 @@ func ShutdownClientServer(ctx context.Context) error {
 	}
 	err := server.Close(ctx)
 	processClientServer.server = nil
+
 	return err
 }

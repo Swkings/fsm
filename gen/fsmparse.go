@@ -122,6 +122,7 @@ func prefixedIdentifiers(values []string, prefix string, kind string) ([]Symbol,
 		seen[value] = struct{}{}
 		result = append(result, Symbol{Identifier: identifier, Value: value})
 	}
+
 	return result, seen, nil
 }
 
@@ -133,6 +134,7 @@ func LoadData(file string, v any) error {
 	if err := conf.LoadFromYamlBytes(content, v); err != nil {
 		return fmt.Errorf("parse FSM description %q: %w", file, err)
 	}
+
 	return nil
 }
 
@@ -144,6 +146,7 @@ func fileExists(path string) (bool, error) {
 	if os.IsNotExist(err) {
 		return false, nil
 	}
+
 	return false, fmt.Errorf("stat %q: %w", path, err)
 }
 
@@ -151,6 +154,7 @@ func CreateDir(path string) error {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return fmt.Errorf("create directory %q: %w", path, err)
 	}
+
 	return nil
 }
 
@@ -164,6 +168,7 @@ func CreateFSMDirLevel(path string, childLevels ...string) error {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -176,5 +181,6 @@ func Map2ListOpt[T comparable, V any, R any](m map[T]V, getValue func(T, V) R, f
 		}
 		result = append(result, getValue(key, item))
 	}
+
 	return result
 }

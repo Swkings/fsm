@@ -51,13 +51,16 @@ func newSSHJSONL(cfg config.JSONL) (*sshJSONLStore, error) {
 	directory := path.Clean(strings.TrimSpace(cfg.Directory))
 	if directory == "." || directory == "" {
 		_ = connection.close()
+
 		return nil, errors.New("jsonl ssh directory is required")
 	}
 	if err = connection.client.MkdirAll(directory); err != nil {
 		_ = connection.close()
+
 		return nil, fmt.Errorf("prepare jsonl ssh directory %s: %w", directory, err)
 	}
 	location := fmt.Sprintf("ssh://%s@%s/%s", connection.username, connection.address, strings.TrimPrefix(directory, "/"))
+
 	return &sshJSONLStore{directory: directory, filename: cfg.Filename, location: location, ssh: connection.ssh, client: connection.client}, nil
 }
 
@@ -100,14 +103,17 @@ func dialJSONLSSH(remote config.SSH) (*sshSFTPConnection, error) {
 	clientConnection, channels, requests, err := ssh.NewClientConn(connection, address, &ssh.ClientConfig{User: username, Auth: auth, HostKeyCallback: hostKey, Timeout: timeout})
 	if err != nil {
 		_ = connection.Close()
+
 		return nil, fmt.Errorf("authenticate jsonl ssh %s: %w", address, err)
 	}
 	sshClient := ssh.NewClient(clientConnection, channels, requests)
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
 		_ = sshClient.Close()
+
 		return nil, fmt.Errorf("start jsonl sftp %s: %w", address, err)
 	}
+
 	return &sshSFTPConnection{address: address, username: username, ssh: sshClient, client: sftpClient}, nil
 }
 
@@ -116,6 +122,7 @@ func (c *sshSFTPConnection) close() error {
 	if sshErr := c.ssh.Close(); err == nil {
 		err = sshErr
 	}
+
 	return err
 }
 
@@ -165,8 +172,10 @@ func BrowseSSHJSONL(ctx context.Context, cfg config.JSONL) (RemoteDirectoryView,
 		if view.Entries[i].Directory != view.Entries[j].Directory {
 			return view.Entries[i].Directory
 		}
+
 		return strings.ToLower(view.Entries[i].Name) < strings.ToLower(view.Entries[j].Name)
 	})
+
 	return view, nil
 }
 
@@ -191,6 +200,7 @@ func sshAuthMethods(cfg config.SSH) ([]ssh.AuthMethod, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse jsonl ssh private key: %w", err)
 	}
+
 	return append(methods, ssh.PublicKeys(signer)), nil
 }
 
@@ -206,6 +216,7 @@ func sshHostKeyCallback(cfg config.SSH) (ssh.HostKeyCallback, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load jsonl ssh known hosts: %w", err)
 	}
+
 	return callback, nil
 }
 
@@ -216,6 +227,7 @@ func expandHome(value string) string {
 			return filepath.Join(current.HomeDir, strings.TrimPrefix(value, "~/"))
 		}
 	}
+
 	return value
 }
 
@@ -241,6 +253,7 @@ func (s *sshJSONLStore) Save(ctx context.Context, record Record) error {
 	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
+
 	return err
 }
 
@@ -270,6 +283,7 @@ func (s *sshJSONLStore) read(ctx context.Context) ([]Record, error) {
 			var record Record
 			if err = json.Unmarshal(scanner.Bytes(), &record); err != nil {
 				_ = file.Close()
+
 				return nil, err
 			}
 			records = append(records, record)
@@ -280,6 +294,7 @@ func (s *sshJSONLStore) read(ctx context.Context) ([]Record, error) {
 			return nil, err
 		}
 	}
+
 	return records, nil
 }
 
@@ -290,6 +305,7 @@ func (s *sshJSONLStore) List(ctx context.Context, query Query) ([]Record, error)
 	if err != nil {
 		return nil, err
 	}
+
 	return filter(records, query), ctx.Err()
 }
 
@@ -309,6 +325,7 @@ func (s *sshJSONLStore) Get(ctx context.Context, id string) (Record, error) {
 			return record, nil
 		}
 	}
+
 	return Record{}, ErrNotFound
 }
 
@@ -341,10 +358,12 @@ func (s *sshJSONLStore) Delete(ctx context.Context, id string) error {
 			var record Record
 			if err = json.Unmarshal(line, &record); err != nil {
 				_ = file.Close()
+
 				return err
 			}
 			if record.ID == id {
 				changed, found = true, true
+
 				continue
 			}
 			kept = append(kept, line)
@@ -355,6 +374,7 @@ func (s *sshJSONLStore) Delete(ctx context.Context, id string) error {
 			if err != nil {
 				return err
 			}
+
 			continue
 		}
 		tempPath := path.Join(s.directory, ".fsm-"+uuid.NewString()+".jsonl")
@@ -375,12 +395,14 @@ func (s *sshJSONLStore) Delete(ctx context.Context, id string) error {
 		}
 		if err != nil {
 			_ = s.client.Remove(tempPath)
+
 			return err
 		}
 	}
 	if !found {
 		return ErrNotFound
 	}
+
 	return nil
 }
 
@@ -391,5 +413,6 @@ func (s *sshJSONLStore) Close() error {
 	if sshErr := s.ssh.Close(); err == nil {
 		err = sshErr
 	}
+
 	return err
 }

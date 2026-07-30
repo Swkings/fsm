@@ -28,6 +28,7 @@ func (fsm *FSM[T]) ProcessEventWithContext(ctx context.Context, event FSMEvent, 
 		return fsm.rejectedRuntimeEventTrace(event, ErrorEventProcessing), ErrorEventProcessing
 	}
 	defer fsm.releaseEventExecution()
+
 	return fsm.processEventLocked(ctx, event, params...)
 }
 
@@ -38,6 +39,7 @@ func (fsm *FSM[T]) processEventLocked(ctx context.Context, event FSMEvent, param
 	if err == nil && persistErr != nil {
 		return trace, persistErr
 	}
+
 	return trace, err
 }
 
@@ -65,24 +67,29 @@ func (fsm *FSM[T]) processEventLockedCore(ctx context.Context, event FSMEvent, p
 	if !exists {
 		resultErr = ErrorEventStateKeyInvalid(key)
 		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail()
+
 		return
 	}
 	trace.SetToState(toState)
 	if resultErr = handler.apply(ctx, fsm, params...); resultErr != nil {
 		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail()
+
 		return
 	}
 	if resultErr = ctx.Err(); resultErr != nil {
 		trace.SetFinalState(fsm.GetCurrentState()).TransitionFail()
+
 		return
 	}
 	var finalState FSMState
 	finalState, resultErr = fsm.commitTransition(fromState, event, toState, nextID)
 	if resultErr != nil {
 		trace.SetFinalState(finalState).TransitionFail()
+
 		return
 	}
 	trace.SetFinalState(finalState).TransitionSuccess()
+
 	return
 }
 

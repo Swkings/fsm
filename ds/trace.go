@@ -34,6 +34,7 @@ func NewTransitionTrace(prevID, id string, fromState FSMState, event FSMEvent) *
 func (trace *TransitionTrace) Start() *TransitionTrace {
 	trace.beginTime = time.Now()
 	trace.BeginTime = trace.beginTime.UnixNano()
+
 	return trace
 }
 
@@ -54,6 +55,7 @@ func (trace *TransitionTrace) Duration() time.Duration {
 	if trace.EndTime <= trace.BeginTime {
 		return 0
 	}
+
 	return time.Duration(trace.EndTime - trace.BeginTime)
 }
 
@@ -63,36 +65,42 @@ func (trace *TransitionTrace) ReleaseControl() *TransitionTrace { return trace }
 // SetToState records the configured target state.
 func (trace *TransitionTrace) SetToState(state FSMState) *TransitionTrace {
 	trace.ToState = state
+
 	return trace
 }
 
 // SetFinalState records the actual state after processing.
 func (trace *TransitionTrace) SetFinalState(state FSMState) *TransitionTrace {
 	trace.FinalState = state
+
 	return trace
 }
 
 // SetEntryMetadata records the snapshot captured before handlers run.
 func (trace *TransitionTrace) SetEntryMetadata(metadata Metadata) *TransitionTrace {
 	trace.EntryMetadata = metadata.Clone()
+
 	return trace
 }
 
 // SetExitMetadata records the snapshot captured after processing finishes.
 func (trace *TransitionTrace) SetExitMetadata(metadata Metadata) *TransitionTrace {
 	trace.ExitMetadata = metadata.Clone()
+
 	return trace
 }
 
 // TransitionSuccess marks the transition successful.
 func (trace *TransitionTrace) TransitionSuccess() *TransitionTrace {
 	trace.TransitionResult = true
+
 	return trace
 }
 
 // TransitionFail marks the transition unsuccessful.
 func (trace *TransitionTrace) TransitionFail() *TransitionTrace {
 	trace.TransitionResult = false
+
 	return trace
 }
 
@@ -101,6 +109,7 @@ func (trace *TransitionTrace) TrimPtr() TransitionTrace {
 	clone := *trace
 	clone.EntryMetadata = trace.EntryMetadata.Clone()
 	clone.ExitMetadata = trace.ExitMetadata.Clone()
+
 	return clone
 }
 
@@ -134,5 +143,6 @@ func (trace *TransitionTrace) String() string {
 	if err != nil {
 		return fmt.Sprintf("%+v", *trace)
 	}
+
 	return string(data)
 }

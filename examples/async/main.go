@@ -28,6 +28,7 @@ func (p *payload) append(event string) {
 func (p *payload) snapshot() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	return append([]string(nil), p.order...)
 }
 
@@ -46,6 +47,7 @@ func main() {
 			close(blockStarted)
 			<-releaseBlock
 			machine.Payload.append("direct")
+
 			return nil
 		}}),
 		fsm.NewTransitionItem("high", "idle", "idle", eventHandler("high")),
@@ -53,6 +55,7 @@ func main() {
 		fsm.NewTransitionItem("cancel", "idle", "idle", eventHandler("cancel")),
 		fsm.NewTransitionItem("fire", "idle", "idle", fsm.Handler[*payload]{Handler: func(_ *fsm.FSM[*payload], _ ...any) error {
 			close(fireDone)
+
 			return nil
 		}}),
 	)
@@ -115,6 +118,7 @@ func eventHandler(name string) fsm.Handler[*payload] {
 			return err
 		}
 		machine.Payload.append(name)
+
 		return nil
 	}}
 }
@@ -124,6 +128,7 @@ func mustSubmit(machine *fsm.FSM[*payload], event fsm.FSMEvent, options ...fsm.A
 	if err != nil {
 		panic(err)
 	}
+
 	return receipt
 }
 

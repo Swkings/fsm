@@ -25,8 +25,10 @@ func newRedis(cfg config.Redis) (*redisStore, error) {
 	backend := &redisStore{client: redis.NewClient(&redis.Options{Addr: cfg.Address, Password: cfg.Password, DB: cfg.DB}), prefix: cfg.KeyPrefix}
 	if err := backend.client.Ping(context.Background()).Err(); err != nil {
 		_ = backend.client.Close()
+
 		return nil, err
 	}
+
 	return backend, nil
 }
 
@@ -43,6 +45,7 @@ func (store *redisStore) Save(ctx context.Context, record Record) error {
 	pipeline.HSet(ctx, store.prefix+":records", record.ID, data)
 	pipeline.ZAdd(ctx, store.prefix+":index", redis.Z{Score: float64(record.RecordedAt.UnixNano()), Member: record.ID})
 	_, err = pipeline.Exec(ctx)
+
 	return err
 }
 
@@ -74,6 +77,7 @@ func (store *redisStore) List(ctx context.Context, query Query) ([]Record, error
 			}
 		}
 	}
+
 	return records, nil
 }
 
@@ -90,6 +94,7 @@ func (store *redisStore) Get(ctx context.Context, id string) (Record, error) {
 	if err == nil {
 		err = json.Unmarshal(data, &record)
 	}
+
 	return record, err
 }
 
@@ -101,6 +106,7 @@ func (store *redisStore) Delete(ctx context.Context, id string) error {
 	if err == nil && deleted.Val() == 0 {
 		err = ErrNotFound
 	}
+
 	return err
 }
 func (store *redisStore) Close() error { return store.client.Close() }

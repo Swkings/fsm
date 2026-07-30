@@ -118,6 +118,7 @@ func normalizeDiscoveryConfig(config DiscoveryConfig) (DiscoveryConfig, error) {
 	if config.PullInterval == 0 {
 		config.PullInterval = 5 * time.Second
 	}
+
 	return config, nil
 }
 
@@ -145,6 +146,7 @@ func (server *Server) RegisterDiscovery(ctx context.Context, discovery ServiceDi
 	if server.closed {
 		server.mu.RUnlock()
 		cancel()
+
 		return nil, ErrServerClosed
 	}
 	server.discoveryMu.Lock()
@@ -152,12 +154,14 @@ func (server *Server) RegisterDiscovery(ctx context.Context, discovery ServiceDi
 		server.discoveryMu.Unlock()
 		server.mu.RUnlock()
 		cancel()
+
 		return nil, fmt.Errorf("%w: %s", ErrDiscoveryRepeated, normalized.ID)
 	}
 	server.discoveries[normalized.ID] = registered
 	server.discoveryMu.Unlock()
 	server.mu.RUnlock()
 	go registered.run()
+
 	return &DiscoveryRegistration{server: server, id: normalized.ID, done: registered.done}, nil
 }
 
@@ -191,6 +195,7 @@ func (registered *registeredDiscovery) reconcile() error {
 	services, err := safeDiscover(registered.discovery, registered.ctx)
 	if err != nil {
 		registered.updateStatus(0, err)
+
 		return err
 	}
 	desired := make(map[string]DiscoveredService, len(services))
@@ -199,10 +204,12 @@ func (registered *registeredDiscovery) reconcile() error {
 		normalized, normalizeErr := normalizeDiscoveredService(service)
 		if normalizeErr != nil {
 			reconcileErrors = append(reconcileErrors, normalizeErr)
+
 			continue
 		}
 		if _, repeated := desired[normalized.Key]; repeated {
 			reconcileErrors = append(reconcileErrors, fmt.Errorf("%w: repeated service key %q", ErrInvalidDiscovery, normalized.Key))
+
 			continue
 		}
 		desired[normalized.Key] = normalized
@@ -237,6 +244,7 @@ func (registered *registeredDiscovery) reconcile() error {
 	err = errors.Join(reconcileErrors...)
 	registered.updateStatus(len(desired), err)
 	registered.server.broadcast("discovery", registered.config.ID)
+
 	return err
 }
 
@@ -258,6 +266,7 @@ func safeDiscover(discovery ServiceDiscoveryI, ctx context.Context) (services []
 			err = fmt.Errorf("%w: panic: %v", ErrInvalidDiscovery, recovered)
 		}
 	}()
+
 	return discovery.Discover(ctx)
 }
 
@@ -283,6 +292,7 @@ func normalizeDiscoveredService(service DiscoveredService) (DiscoveredService, e
 	if service.PullInterval < 0 {
 		return DiscoveredService{}, fmt.Errorf("%w: pull interval must not be negative", ErrInvalidDiscovery)
 	}
+
 	return service, nil
 }
 
@@ -291,6 +301,7 @@ func validateRemoteEndpoint(endpoint string) error {
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return fmt.Errorf("%w: invalid endpoint %q", ErrInvalidDiscovery, endpoint)
 	}
+
 	return nil
 }
 
@@ -300,6 +311,7 @@ func remoteResourceEndpoint(endpoint, suffix string) string {
 		return strings.TrimRight(endpoint, "/") + suffix
 	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + suffix
+
 	return parsed.String()
 }
 
@@ -330,6 +342,7 @@ func (registered *registeredDiscovery) registerService(service DiscoveredService
 	registered.mu.Lock()
 	registered.services[service.Key] = &discoveredRegistration{service: service, registration: registration}
 	registered.mu.Unlock()
+
 	return nil
 }
 
@@ -340,6 +353,7 @@ func joinDiscoveryPath(prefix, path string) string {
 	if path == "" {
 		return prefix
 	}
+
 	return prefix + "/" + path
 }
 
@@ -371,6 +385,7 @@ func (registered *registeredDiscovery) unregisterAll() {
 func (registered *registeredDiscovery) snapshot() DiscoverySnapshot {
 	registered.mu.RLock()
 	defer registered.mu.RUnlock()
+
 	return DiscoverySnapshot{
 		ID: registered.config.ID, Name: registered.config.Name,
 		Endpoint: discoveryEndpoint(registered.discovery), PathPrefix: registered.config.PathPrefix,
@@ -402,8 +417,10 @@ func (server *Server) DiscoverySnapshots() []DiscoverySnapshot {
 		if snapshots[left].Name != snapshots[right].Name {
 			return snapshots[left].Name < snapshots[right].Name
 		}
+
 		return snapshots[left].ID < snapshots[right].ID
 	})
+
 	return snapshots
 }
 
@@ -448,6 +465,7 @@ func (server *Server) UnregisterDiscovery(id string) bool {
 	registered.cancel()
 	<-registered.done
 	server.broadcast("discovery", id)
+
 	return true
 }
 

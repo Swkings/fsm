@@ -12,6 +12,7 @@ func (fsm *FSM[T]) SetPayload(payload T) *FSM[T] {
 	defer fsm.notifyRuntimeObservers(nil)
 	defer fsm.stateLock.Unlock()
 	fsm.Payload = payload
+
 	return fsm
 }
 
@@ -27,6 +28,7 @@ func (fsm *FSM[T]) SetCurrentState(state FSMState) {
 func (fsm *FSM[T]) GetCurrentState() FSMState {
 	fsm.stateLock.RLock()
 	defer fsm.stateLock.RUnlock()
+
 	return fsm.currentState
 }
 
@@ -49,6 +51,7 @@ func (fsm *FSM[T]) Metadata() FSMMetadata {
 	payloadJSON, err := payload.JSON()
 	if err != nil {
 		metadata.PayloadError = err.Error()
+
 		return metadata
 	}
 	if len(payloadJSON) == 0 {
@@ -56,9 +59,11 @@ func (fsm *FSM[T]) Metadata() FSMMetadata {
 	}
 	if !json.Valid(payloadJSON) {
 		metadata.PayloadError = "payload JSON is invalid"
+
 		return metadata
 	}
 	metadata.Payload = append(json.RawMessage(nil), payloadJSON...)
+
 	return metadata
 }
 
@@ -82,12 +87,14 @@ func (fsm *FSM[T]) GetEventContext() context.Context {
 	if fsm.processingContext == nil {
 		return context.Background()
 	}
+
 	return fsm.processingContext
 }
 
 func (fsm *FSM[T]) stateSnapshot() (FSMState, string) {
 	fsm.stateLock.RLock()
 	defer fsm.stateLock.RUnlock()
+
 	return fsm.currentState, fsm.TtId
 }
 
@@ -95,6 +102,7 @@ func (fsm *FSM[T]) beginProcessingEvent(ctx context.Context, event FSMEvent) (FS
 	fsm.stateLock.Lock()
 	defer fsm.stateLock.Unlock()
 	fsm.processingEvent, fsm.processingContext = event, ctx
+
 	return fsm.currentState, fsm.TtId
 }
 
@@ -112,5 +120,6 @@ func (fsm *FSM[T]) commitTransition(fromState FSMState, event FSMEvent, toState 
 	}
 	fsm.fromState, fsm.fromEvent, fsm.processingEvent = fromState, event, EventEmpty
 	fsm.currentState, fsm.TtId = toState, ttID
+
 	return fsm.currentState, nil
 }

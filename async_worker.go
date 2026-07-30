@@ -25,20 +25,24 @@ func (fsm *FSM[T]) runEventQueue() {
 		}
 		if status, err, canceled := queuedEventCancellation(item); canceled {
 			fsm.rejectQueuedEvent(item, status, err)
+
 			continue
 		}
 		if item.priority == EventPriorityLow && fsm.eventQueue.hasHighPriorityEvent() {
 			if !fsm.eventQueue.requeueFront(item) {
 				fsm.rejectQueuedEvent(item, AsyncEventCanceled, ErrorEventQueueClosed)
 			}
+
 			continue
 		}
 		if !fsm.tryAcquireQueuedEvent() {
 			if !fsm.eventQueue.requeueFront(item) {
 				fsm.rejectQueuedEvent(item, AsyncEventCanceled, ErrorEventQueueClosed)
+
 				continue
 			}
 			fsm.waitForQueueSchedule()
+
 			continue
 		}
 		stopEventExpiryTimer(item)
@@ -64,6 +68,7 @@ func (fsm *FSM[T]) tryAcquireQueuedEvent() bool {
 	if fsm.directEventPending.Load() > 0 {
 		return false
 	}
+
 	return fsm.eventLock.TryLock()
 }
 
@@ -98,6 +103,7 @@ func eventExecutionContext(parent, queueContext context.Context) (context.Contex
 	if queueContext.Err() != nil {
 		cancel()
 	}
+
 	return ctx, func() { stopQueueCancel(); cancel() }
 }
 
@@ -124,6 +130,7 @@ func (fsm *FSM[T]) rejectedEventTrace(event FSMEvent, err error) TransitionTrace
 	state, previousID := fsm.stateSnapshot()
 	trace := NewTransitionTrace(previousID, uuid.NewString(), state, event).Start()
 	trace.SetFinalState(state).TransitionFail().End(err)
+
 	return trace.TrimPtr()
 }
 

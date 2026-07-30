@@ -76,6 +76,7 @@ func (source *replaySource) view() ReplaySourceView {
 	source.mu.RLock()
 	defer source.mu.RUnlock()
 	descriptor := source.backend.Descriptor()
+
 	return ReplaySourceView{ID: source.id, Name: source.name, Driver: descriptor.Driver, Location: descriptor.Location, Primary: source.primary, LastError: source.lastErr}
 }
 
@@ -107,6 +108,7 @@ func (hub *replayHub) register(id, name string, backend store.StoreI, primary, o
 		return errors.New("replay source already exists")
 	}
 	hub.sources[id] = &replaySource{id: id, name: name, backend: backend, primary: primary, owned: owned}
+
 	return nil
 }
 
@@ -117,9 +119,11 @@ func (hub *replayHub) add(_ context.Context, cfg ReplaySourceConfig) (ReplaySour
 	}
 	if err = hub.register(cfg.ID, cfg.Name, backend, cfg.ID == "primary", true); err != nil {
 		_ = backend.Close()
+
 		return ReplaySourceView{}, err
 	}
 	source, _ := hub.source(cfg.ID)
+
 	return source.view(), nil
 }
 
@@ -133,6 +137,7 @@ func (hub *replayHub) source(id string) (*replaySource, error) {
 	if !exists {
 		return nil, ErrReplaySourceNotFound
 	}
+
 	return source, nil
 }
 
@@ -141,6 +146,7 @@ func (hub *replayHub) drop(id string) bool {
 	source, exists := hub.sources[id]
 	if !exists || source.primary {
 		hub.mu.Unlock()
+
 		return false
 	}
 	delete(hub.sources, id)
@@ -148,6 +154,7 @@ func (hub *replayHub) drop(id string) bool {
 	if source.owned {
 		_ = source.backend.Close()
 	}
+
 	return true
 }
 
@@ -162,8 +169,10 @@ func (hub *replayHub) views() []ReplaySourceView {
 		if views[i].Primary != views[j].Primary {
 			return views[i].Primary
 		}
+
 		return views[i].Name < views[j].Name
 	})
+
 	return views
 }
 
@@ -187,6 +196,7 @@ func (hub *replayHub) list(ctx context.Context, sourceID, key string, limit int)
 			Trace: storeTraceSnapshot(record.Trace),
 		})
 	}
+
 	return summaries, nil
 }
 
@@ -200,6 +210,7 @@ func (hub *replayHub) get(ctx context.Context, sourceID, id string) (ReplayRecor
 	if err != nil {
 		return ReplayRecord{}, err
 	}
+
 	return replayRecord(source.id, record), nil
 }
 
@@ -210,6 +221,7 @@ func (hub *replayHub) remove(ctx context.Context, sourceID, id string) error {
 	}
 	err = source.backend.Delete(ctx, id)
 	source.fail(err)
+
 	return err
 }
 
@@ -227,6 +239,7 @@ func (hub *replayHub) close() {
 
 func replayRecord(sourceID string, record store.Record) ReplayRecord {
 	snapshot := storeRecordSnapshot(record)
+
 	return ReplayRecord{ID: record.ID, SourceID: sourceID, FSMID: record.Key, DisplayName: record.DisplayName, Path: record.Category, RecordedAt: record.RecordedAt, Snapshot: snapshot}
 }
 
@@ -272,6 +285,7 @@ func storeRecordSnapshot(record store.Record) Snapshot {
 	if metadata.PayloadError != "" {
 		snapshot.PayloadError = errors.New(metadata.PayloadError)
 	}
+
 	return snapshot
 }
 
@@ -280,6 +294,7 @@ func storeTraceSnapshot(trace store.Trace) TraceSnapshot {
 	if trace.EndTime > trace.BeginTime {
 		duration = time.Duration(trace.EndTime - trace.BeginTime)
 	}
+
 	return TraceSnapshot{
 		TransitionID: trace.TransitionID, PreviousID: trace.PreviousID,
 		FromState: trace.FromState, Event: trace.Event, ToState: trace.ToState,

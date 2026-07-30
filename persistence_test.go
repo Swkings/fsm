@@ -21,6 +21,7 @@ func persistentMachine(payload *persistentPayload) *FSM[*persistentPayload] {
 	return NewFSM("persistent", FSMState("idle"), payload).SetTransitions(
 		NewTransitionItem("start", "idle", "running", Handler[*persistentPayload]{Handler: func(machine *FSM[*persistentPayload], _ ...any) error {
 			machine.Payload.Count++
+
 			return nil
 		}}),
 	)

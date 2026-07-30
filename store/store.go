@@ -39,6 +39,7 @@ func New(cfg config.Store) (StoreI, error) {
 		if cfg.JSONL.Directory == "" {
 			cfg.JSONL.Directory = filepath.Join("data", "fsm")
 		}
+
 		return newJSONL(cfg.JSONL)
 	case config.StoreDriverMySQL:
 		return newMySQL(cfg.MySQL)
@@ -59,6 +60,7 @@ func newJSONL(cfg config.JSONL) (*jsonlStore, error) {
 	if err := os.MkdirAll(cfg.Directory, 0o755); err != nil {
 		return nil, err
 	}
+
 	return &jsonlStore{directory: cfg.Directory, filename: cfg.Filename}, nil
 }
 
@@ -84,6 +86,7 @@ func (s *jsonlStore) Save(ctx context.Context, record Record) error {
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
+
 	return err
 }
 
@@ -110,6 +113,7 @@ func (s *jsonlStore) read() ([]Record, error) {
 			var record Record
 			if err = json.Unmarshal(scanner.Bytes(), &record); err != nil {
 				_ = file.Close()
+
 				return nil, err
 			}
 			records = append(records, record)
@@ -120,6 +124,7 @@ func (s *jsonlStore) read() ([]Record, error) {
 			return nil, err
 		}
 	}
+
 	return records, nil
 }
 
@@ -138,6 +143,7 @@ func filter(records []Record, query Query) []Record {
 	if len(out) > limit {
 		out = out[:limit]
 	}
+
 	return out
 }
 
@@ -148,6 +154,7 @@ func (s *jsonlStore) List(ctx context.Context, query Query) ([]Record, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return filter(records, query), ctx.Err()
 }
 
@@ -159,6 +166,7 @@ func latest(ctx context.Context, backend StoreI, key string) (Record, error) {
 	if len(records) == 0 {
 		return Record{}, ErrNotFound
 	}
+
 	return records[0], nil
 }
 
@@ -181,6 +189,7 @@ func (s *jsonlStore) Get(ctx context.Context, id string) (Record, error) {
 			return record, nil
 		}
 	}
+
 	return Record{}, ErrNotFound
 }
 
@@ -213,10 +222,12 @@ func (s *jsonlStore) Delete(ctx context.Context, id string) error {
 			var record Record
 			if err = json.Unmarshal(line, &record); err != nil {
 				_ = file.Close()
+
 				return err
 			}
 			if record.ID == id {
 				changed, found = true, true
+
 				continue
 			}
 			kept = append(kept, line)
@@ -227,6 +238,7 @@ func (s *jsonlStore) Delete(ctx context.Context, id string) error {
 			if err != nil {
 				return err
 			}
+
 			continue
 		}
 		temp, err := os.CreateTemp(s.directory, ".fsm-*.jsonl")
@@ -247,12 +259,14 @@ func (s *jsonlStore) Delete(ctx context.Context, id string) error {
 		}
 		if err != nil {
 			_ = os.Remove(tempName)
+
 			return err
 		}
 	}
 	if !found {
 		return ErrNotFound
 	}
+
 	return nil
 }
 func (s *jsonlStore) Close() error { return nil }

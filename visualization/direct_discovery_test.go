@@ -52,6 +52,7 @@ func TestDiscoveryConfigurationHTTPAPIAcceptsDirectClientServerAddress(t *testin
 	}
 	waitFor(t, func() bool {
 		snapshot, exists := aggregate.Snapshot("remote:direct-client:direct-worker")
+
 		return exists && snapshot.CurrentState == "idle" &&
 			snapshot.DisplayName == "Direct Worker" &&
 			snapshot.Path == "external/workers"

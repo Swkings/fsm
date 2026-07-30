@@ -8,6 +8,15 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+    - bodyclose
+    - whitespace
+    - nlreturn
+    - rowserrcheck
+    - unparam
+    - tparallel
+    - nolintlint
+    - misspell
+    - godot
   exclusions:
     paths:
       - visualization/frontend/node_modules
@@ -19,4 +28,5 @@ linters:
 formatters:
   enable:
     - gofmt
+    - gofumpt
     - goimports

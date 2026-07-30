@@ -46,23 +46,27 @@ func (discovery *ClientServerDiscovery) Discover(ctx context.Context) ([]Discove
 		server, normalizeErr := normalizeDiscoveredService(item)
 		if normalizeErr != nil {
 			discoverErrors = append(discoverErrors, normalizeErr)
+
 			continue
 		}
 		var response clientServerTargetsResponse
 		endpoint := remoteResourceEndpoint(server.Endpoint, "/api/targets")
 		if requestErr := getRemoteJSON(ctx, client, endpoint, &response); requestErr != nil {
 			discoverErrors = append(discoverErrors, fmt.Errorf("discover visualization server %q: %w", server.Key, requestErr))
+
 			continue
 		}
 		for _, target := range response.Targets {
 			target.ID = strings.TrimSpace(target.ID)
 			if target.ID == "" || strings.ContainsAny(target.ID, "/\\") {
 				discoverErrors = append(discoverErrors, fmt.Errorf("%w: invalid target id %q", ErrInvalidDiscovery, target.ID))
+
 				continue
 			}
 			key := server.Key + ":" + target.ID
 			if _, repeated := keys[key]; repeated {
 				discoverErrors = append(discoverErrors, fmt.Errorf("%w: repeated target key %q", ErrInvalidDiscovery, key))
+
 				continue
 			}
 			keys[key] = struct{}{}
@@ -79,6 +83,7 @@ func (discovery *ClientServerDiscovery) Discover(ctx context.Context) ([]Discove
 	if err := errors.Join(discoverErrors...); err != nil {
 		return nil, err
 	}
+
 	return services, nil
 }
 
@@ -99,6 +104,7 @@ func (server *Server) RegisterClientServerDiscovery(
 func (server *Server) handleClientServerTargets(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
+
 		return
 	}
 	snapshots := server.Snapshots()
@@ -114,12 +120,14 @@ func (server *Server) handleClientServerTargets(writer http.ResponseWriter, requ
 func (server *Server) handleExportedClient(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
+
 		return
 	}
 	resource := strings.TrimPrefix(request.URL.Path, "/api/clients/")
 	separator := strings.LastIndexByte(resource, '/')
 	if separator <= 0 {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "visualization client resource not found"})
+
 		return
 	}
 	id, kind := resource[:separator], resource[separator+1:]
@@ -128,6 +136,7 @@ func (server *Server) handleExportedClient(writer http.ResponseWriter, request *
 	if !exists {
 		server.mu.RUnlock()
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "fsm not found"})
+
 		return
 	}
 	definition := cloneDefinition(registered.definition)

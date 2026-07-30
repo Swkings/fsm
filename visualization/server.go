@@ -83,6 +83,7 @@ func NewServer(configs ...VisualizationConfig) *Server {
 	if len(configs) > 1 {
 		panic("visualization.NewServer accepts at most one config")
 	}
+
 	return newClientServer(configs[0])
 }
 
@@ -105,6 +106,7 @@ func NewServerWithConfig(config ServerConfig) *Server {
 		replays:     newReplayHub(),
 	}
 	server.handler = newHTTPHandler(server)
+
 	return server
 }
 
@@ -146,6 +148,7 @@ func (server *Server) Register(ctx context.Context, client ClientI, config Regis
 		})
 		if subscribeErr != nil {
 			handle.Unregister()
+
 			return nil, subscribeErr
 		}
 		server.attachUnsubscribe(definition.ID, registered, unsubscribe)
@@ -154,6 +157,7 @@ func (server *Server) Register(ctx context.Context, client ClientI, config Regis
 	if config.Mode == ModePull {
 		go server.runPull(definition.ID, registered)
 	}
+
 	return handle, nil
 }
 
@@ -163,6 +167,7 @@ func clientDefinition(client ClientI) (definition Definition, err error) {
 			err = fmt.Errorf("%w: definition panic: %v", ErrInvalidClient, recovered)
 		}
 	}()
+
 	return client.VisualizationDefinition(), nil
 }
 
@@ -172,6 +177,7 @@ func subscribeClient(client PushClientI, publish PublishFunc) (unsubscribe func(
 			err = fmt.Errorf("%w: subscribe panic: %v", ErrInvalidClient, recovered)
 		}
 	}()
+
 	return client.SubscribeVisualization(publish), nil
 }
 
@@ -198,11 +204,13 @@ func (server *Server) addRegistration(
 	if server.closed {
 		server.mu.Unlock()
 		cancel()
+
 		return nil, ErrServerClosed
 	}
 	if _, exists := server.sources[definition.ID]; exists {
 		server.mu.Unlock()
 		cancel()
+
 		return nil, fmt.Errorf("%w: %s", ErrRegistrationIDRepeated, definition.ID)
 	}
 	server.sources[definition.ID] = registered
@@ -212,6 +220,7 @@ func (server *Server) addRegistration(
 		<-sourceContext.Done()
 		server.Unregister(definition.ID)
 	}()
+
 	return registered, nil
 }
 
@@ -252,11 +261,13 @@ func (server *Server) refreshClient(id string, expected *registeredClient) error
 	data, err := clientRealtimeData(expected.client, expected.ctx)
 	if err != nil {
 		server.markCollectionError(id, expected, err)
+
 		return err
 	}
 	if !server.storeRealtimeDataLocked(id, expected, data, nil) {
 		return fmt.Errorf("%w: %s", ErrRegistrationNotFound, id)
 	}
+
 	return nil
 }
 
@@ -269,6 +280,7 @@ func clientRealtimeData(client ClientI, ctx context.Context) (data RealtimeData,
 			err = fmt.Errorf("visualization realtime data panic: %v", recovered)
 		}
 	}()
+
 	return client.VisualizationSnapshot(ctx)
 }
 
@@ -303,13 +315,16 @@ func (server *Server) Push(
 	registered, exists := server.sources[id]
 	if !exists {
 		server.mu.RUnlock()
+
 		return fmt.Errorf("%w: %s", ErrRegistrationNotFound, id)
 	}
 	if registered.config.Mode != ModePush {
 		server.mu.RUnlock()
+
 		return fmt.Errorf("%w: %s is %s", ErrRegistrationMode, id, registered.config.Mode)
 	}
 	server.mu.RUnlock()
+
 	return server.storeRealtimeData(id, registered, data, traces)
 }
 
@@ -327,6 +342,7 @@ func (server *Server) storeRealtimeData(
 	if !server.storeRealtimeDataLocked(id, expected, data, incrementalTraces) {
 		return fmt.Errorf("%w: %s", ErrRegistrationNotFound, id)
 	}
+
 	return nil
 }
 
@@ -342,6 +358,7 @@ func (server *Server) storeRealtimeDataLocked(
 	registered, exists := server.sources[id]
 	if !exists || registered != expected {
 		server.mu.Unlock()
+
 		return false
 	}
 	if data.Traces != nil {
@@ -359,6 +376,7 @@ func (server *Server) storeRealtimeDataLocked(
 	registered.snapshot = buildSnapshot(registered.definition, registered.config, data, registered.traces, "")
 	server.mu.Unlock()
 	server.broadcast("updated", id)
+
 	return true
 }
 
@@ -382,6 +400,7 @@ func buildSnapshot(
 			available = append(available, transition)
 		}
 	}
+
 	return Snapshot{
 		Descriptor:           definition.Descriptor(config),
 		Mode:                 config.Mode,
@@ -415,6 +434,7 @@ func (server *Server) Unregister(id string) bool {
 	}
 	stopRegistration(registered)
 	server.broadcast("unregistered", id)
+
 	return true
 }
 
@@ -451,8 +471,10 @@ func (server *Server) Snapshots() []Snapshot {
 		if snapshots[i].DisplayName != snapshots[j].DisplayName {
 			return snapshots[i].DisplayName < snapshots[j].DisplayName
 		}
+
 		return snapshots[i].ID < snapshots[j].ID
 	})
+
 	return snapshots
 }
 
@@ -462,10 +484,12 @@ func (server *Server) Snapshot(id string) (Snapshot, bool) {
 	registered, exists := server.sources[id]
 	if !exists {
 		server.mu.RUnlock()
+
 		return Snapshot{}, false
 	}
 	snapshot := cloneSnapshot(registered.snapshot)
 	server.mu.RUnlock()
+
 	return snapshot, true
 }
 
@@ -477,6 +501,7 @@ func (server *Server) Close(ctx context.Context) error {
 	server.mu.Lock()
 	if server.closed {
 		server.mu.Unlock()
+
 		return nil
 	}
 	server.closed = true
@@ -509,6 +534,7 @@ func (server *Server) Close(ctx context.Context) error {
 	if err := httpServer.Shutdown(ctx); err != nil {
 		return fmt.Errorf("shutdown visualization server: %w", err)
 	}
+
 	return nil
 }
 

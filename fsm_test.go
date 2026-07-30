@@ -37,15 +37,18 @@ func TestProcessEventRunsHandlerStagesInOrder(t *testing.T) {
 	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
 		BeforeHandler: func(_ *FSM[*testPayload], _ ...any) error {
 			stages = append(stages, "before")
+
 			return nil
 		},
 		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			stages = append(stages, "handler")
 			fsm.Payload.Value++
+
 			return nil
 		},
 		AfterHandler: func(_ *FSM[*testPayload], _ ...any) error {
 			stages = append(stages, "after")
+
 			return nil
 		},
 	}))
@@ -91,6 +94,7 @@ func TestProcessEventCapturesEntryAndExitMetadata(t *testing.T) {
 	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
 		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			fsm.Payload.Value += 7
+
 			return nil
 		},
 	}))
@@ -131,6 +135,7 @@ func TestProcessEventCapturesExitMetadataOnFailure(t *testing.T) {
 	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
 		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			fsm.Payload.Value = 2
+
 			return wantErr
 		},
 	}))
@@ -161,14 +166,17 @@ func TestProcessEventPassesParamsToActorStages(t *testing.T) {
 	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
 		BeforeHandler: func(_ *FSM[*testPayload], params ...any) error {
 			received = append(received, fmt.Sprintf("before:%s:%d", params[0], params[1]))
+
 			return nil
 		},
 		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			fsm.Payload.Value++
+
 			return nil
 		},
 		AfterHandler: func(_ *FSM[*testPayload], params ...any) error {
 			received = append(received, fmt.Sprintf("after:%s:%d", params[0], params[1]))
+
 			return nil
 		},
 	}))
@@ -205,14 +213,17 @@ func TestProcessEventPropagatesEveryHandlerStageError(t *testing.T) {
 			machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
 				BeforeHandler: func(_ *FSM[*testPayload], _ ...any) error {
 					stages = append(stages, "before")
+
 					return tt.beforeError
 				},
 				Handler: func(_ *FSM[*testPayload], _ ...any) error {
 					stages = append(stages, "handler")
+
 					return tt.handlerErr
 				},
 				AfterHandler: func(_ *FSM[*testPayload], _ ...any) error {
 					stages = append(stages, "after")
+
 					return tt.afterError
 				},
 			}))
@@ -285,6 +296,7 @@ func TestNestedProcessEventReturnsBusyInsteadOfDeadlocking(t *testing.T) {
 	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
 		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			_, nestedErr = fsm.ProcessEvent("nested")
+
 			return nil
 		},
 	}))
@@ -302,6 +314,7 @@ func TestStateChangeDuringHandlerRejectsCommit(t *testing.T) {
 	machine.SetTransitions(NewTransitionItem("start", "idle", "running", Handler[*testPayload]{
 		Handler: func(fsm *FSM[*testPayload], _ ...any) error {
 			fsm.SetCurrentState("external")
+
 			return nil
 		},
 	}))
@@ -370,5 +383,6 @@ func TestTransitionTraceStringAndDuration(t *testing.T) {
 func capturePanic(fn func()) (value any) {
 	defer func() { value = recover() }()
 	fn()
+
 	return nil
 }

@@ -74,6 +74,7 @@ func TestManagedServerMCPQueriesFSMWithLatestProtocol(t *testing.T) {
 	machine.SetTransitions(fsm.NewTransitionItem("start", "idle", "running", fsm.Handler[*testPayload]{
 		Handler: func(machine *fsm.FSM[*testPayload], _ ...any) error {
 			machine.Payload.Value++
+
 			return nil
 		},
 	}))
@@ -171,6 +172,7 @@ func TestManagedServerRestoresRegisteredFSMFromSharedStore(t *testing.T) {
 	first.SetTransitions(fsm.NewTransitionItem("start", "idle", "running", fsm.Handler[*testPayload]{
 		Handler: func(machine *fsm.FSM[*testPayload], _ ...any) error {
 			machine.Payload.Value = 42
+
 			return nil
 		},
 	}))
@@ -218,6 +220,7 @@ func startManagedServerForTest(t *testing.T, server *fsmserver.Server) <-chan an
 	case <-time.After(5 * time.Second):
 		t.Fatal("server Start timeout")
 	}
+
 	return returned
 }
 

@@ -28,6 +28,7 @@ func newHTTPHandler(server *Server) http.Handler {
 	mux.HandleFunc("/api/replay/ssh/directories", server.handleReplaySSHDirectories)
 	mux.HandleFunc("/api/replay/records", server.handleReplayRecords)
 	mux.HandleFunc("/api/replay/records/", server.handleReplayRecordDetail)
+
 	return mux
 }
 
@@ -56,6 +57,7 @@ func (server *Server) Start() error {
 	go func(httpServer *http.Server, listener net.Listener) {
 		_ = httpServer.Serve(listener)
 	}(server.httpServer, listener)
+
 	return nil
 }
 
@@ -70,10 +72,12 @@ func (server *Server) Serve(listener net.Listener) error {
 	server.mu.RUnlock()
 	if closed {
 		server.lifecycleMu.Unlock()
+
 		return ErrServerClosed
 	}
 	if server.httpServer != nil {
 		server.lifecycleMu.Unlock()
+
 		return ErrServerStarted
 	}
 	server.listener = listener
@@ -83,6 +87,7 @@ func (server *Server) Serve(listener net.Listener) error {
 	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve visualization server: %w", err)
 	}
+
 	return nil
 }
 
@@ -100,6 +105,7 @@ func (server *Server) URL() string {
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}
+
 	return "http://" + net.JoinHostPort(host, port)
 }
 
@@ -132,12 +138,14 @@ func (server *Server) handleFSMList(writer http.ResponseWriter, request *http.Re
 func (server *Server) handleFSMDetail(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
+
 		return
 	}
 	id := strings.TrimPrefix(request.URL.Path, "/api/fsms/")
 	snapshot, exists := server.Snapshot(id)
 	if !exists {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "fsm not found"})
+
 		return
 	}
 	writeJSON(writer, http.StatusOK, snapshot)
@@ -161,6 +169,7 @@ func (server *Server) registerRemote(definition Definition, config RegistrationC
 		normalizedConfig,
 		nil,
 	)
+
 	return err
 }
 
@@ -170,6 +179,7 @@ func (server *Server) handleRemoteRegistration(writer http.ResponseWriter, reque
 	var registration remoteRegistrationRequest
 	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 4<<20)).Decode(&registration); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+
 		return
 	}
 	config := RegistrationConfig{
@@ -179,6 +189,7 @@ func (server *Server) handleRemoteRegistration(writer http.ResponseWriter, reque
 	}
 	if err := server.registerRemote(registration.Definition, config); err != nil {
 		writeJSON(writer, http.StatusConflict, map[string]string{"error": err.Error()})
+
 		return
 	}
 	stored, _ := server.Snapshot(strings.TrimSpace(registration.ID))
@@ -190,11 +201,13 @@ func (server *Server) handleRemoteRegistration(writer http.ResponseWriter, reque
 func (server *Server) handlePush(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
+
 		return
 	}
 	id := strings.TrimSpace(strings.TrimPrefix(request.URL.Path, "/api/push/"))
 	if id == "" || strings.Contains(id, "/") || strings.Contains(id, string(rune(92))) {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": ErrInvalidRegistrationID.Error()})
+
 		return
 	}
 	var wire realtimeDataWire
@@ -202,6 +215,7 @@ func (server *Server) handlePush(writer http.ResponseWriter, request *http.Reque
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&wire); err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+
 		return
 	}
 	data := wire.realtimeData()
@@ -211,6 +225,7 @@ func (server *Server) handlePush(writer http.ResponseWriter, request *http.Reque
 			status = http.StatusNotFound
 		}
 		writeJSON(writer, status, map[string]string{"error": err.Error()})
+
 		return
 	}
 	stored, _ := server.Snapshot(id)
@@ -221,6 +236,7 @@ func (server *Server) handleEvents(writer http.ResponseWriter, request *http.Req
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
 		http.Error(writer, "streaming unsupported", http.StatusInternalServerError)
+
 		return
 	}
 	writer.Header().Set("Content-Type", "text/event-stream")
@@ -232,6 +248,7 @@ func (server *Server) handleEvents(writer http.ResponseWriter, request *http.Req
 	if server.closed {
 		server.mu.Unlock()
 		http.Error(writer, "server closed", http.StatusServiceUnavailable)
+
 		return
 	}
 	server.clients[client] = struct{}{}
@@ -273,6 +290,7 @@ func writeSSE(writer http.ResponseWriter, flusher http.Flusher, payload []byte) 
 		return false
 	}
 	flusher.Flush()
+
 	return true
 }
 

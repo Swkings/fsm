@@ -52,6 +52,7 @@ type Metadata struct {
 // Clone returns a deep copy whose payload can be modified independently.
 func (metadata Metadata) Clone() Metadata {
 	metadata.Payload = append(json.RawMessage(nil), metadata.Payload...)
+
 	return metadata
 }
 
@@ -73,6 +74,7 @@ type WireMetadata struct {
 // Clone returns a deep copy whose payload can be modified independently.
 func (metadata WireMetadata) Clone() WireMetadata {
 	metadata.Payload = append(json.RawMessage(nil), metadata.Payload...)
+
 	return metadata
 }
 

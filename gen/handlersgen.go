@@ -45,8 +45,10 @@ func collectHandlerData(data FSMData) []*HandlerData {
 		if left.From == right.From {
 			return left.Event < right.Event
 		}
+
 		return left.From < right.From
 	})
+
 	return items
 }
 

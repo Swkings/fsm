@@ -23,6 +23,7 @@ func (fsm *FSM[T]) SetTransitions(items ...TransitionItem[T]) *FSM[T] {
 		fsm.handlers[key] = item.Handler
 		fsm.setEventSearch(key)
 	}
+
 	return fsm
 }
 
@@ -37,6 +38,7 @@ func (fsm *FSM[T]) setEventSearch(key EventStateKey) {
 func (fsm *FSM[T]) GetEventUnderState(state FSMState) []FSMEvent {
 	fsm.configLock.RLock()
 	defer fsm.configLock.RUnlock()
+
 	return append([]FSMEvent(nil), fsm.eventSearch[state]...)
 }
 
@@ -44,6 +46,7 @@ func (fsm *FSM[T]) getTransition(key EventStateKey) (FSMState, Handler[T], bool)
 	fsm.configLock.RLock()
 	defer fsm.configLock.RUnlock()
 	state, exists := fsm.transitions[key]
+
 	return state, fsm.handlers[key], exists
 }
 
@@ -55,5 +58,6 @@ func (fsm *FSM[T]) visualizationSnapshot() (map[EventStateKey]FSMState, FSMState
 	}
 	fsm.configLock.RUnlock()
 	currentState, _ := fsm.stateSnapshot()
+
 	return transitions, currentState
 }

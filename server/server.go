@@ -98,6 +98,7 @@ func NewServer(cfg config.Config) (*Server, error) {
 			if err = registry.RegisterReplayStore("primary", "FSM Store", backend); err != nil {
 				_ = registry.Close(context.Background())
 				_ = backend.Close()
+
 				return nil, fmt.Errorf("register fsm replay store: %w", err)
 			}
 		}
@@ -118,6 +119,7 @@ func NewServer(cfg config.Config) (*Server, error) {
 	if server.mcpEnabled {
 		server.mcp, server.mcpHandler = fsmmcp.NewServer(registry, cfg.MCP)
 	}
+
 	return server, nil
 }
 
@@ -127,6 +129,7 @@ func MustNewServer(cfg config.Config) *Server {
 	if err != nil {
 		panic(err)
 	}
+
 	return server
 }
 
@@ -139,10 +142,12 @@ func (server *Server) Register(machines ...RegisterableFSMI) error {
 			for i := len(registered) - 1; i >= 0; i-- {
 				server.Unregister(registered[i])
 			}
+
 			return err
 		}
 		registered = append(registered, id)
 	}
+
 	return nil
 }
 
@@ -152,6 +157,7 @@ func (server *Server) RegisterWithKey(storeKey string, machine RegisterableFSMI)
 		return ErrStoreNotConfigured
 	}
 	_, err := server.register(machine, storeKey)
+
 	return err
 }
 
@@ -170,6 +176,7 @@ func (server *Server) register(machine RegisterableFSMI, storeKey string) (strin
 	server.registrationMu.Lock()
 	if _, exists := server.registrations[definition.ID]; exists {
 		server.registrationMu.Unlock()
+
 		return "", fmt.Errorf("%w: %s", ErrManagedFSMRegistered, definition.ID)
 	}
 	server.registrationMu.Unlock()
@@ -196,6 +203,7 @@ func (server *Server) register(machine RegisterableFSMI, storeKey string) (strin
 			if storeBound {
 				machine.UnbindStore()
 			}
+
 			return "", fmt.Errorf("register fsm %q: %w", definition.Name, err)
 		}
 		id = registration.ID()
@@ -209,10 +217,12 @@ func (server *Server) register(machine RegisterableFSMI, storeKey string) (strin
 		if storeBound {
 			machine.UnbindStore()
 		}
+
 		return "", fmt.Errorf("%w: %s", ErrManagedFSMRegistered, id)
 	}
 	server.registrations[id] = &managedFSMRegistration{machine: machine, visualization: registration, storeBound: storeBound}
 	server.registrationMu.Unlock()
+
 	return id, nil
 }
 
@@ -233,6 +243,7 @@ func (server *Server) Unregister(id string) bool {
 	if registration.storeBound {
 		registration.machine.UnbindStore()
 	}
+
 	return true
 }
 
@@ -270,9 +281,11 @@ func (server *Server) start() error {
 			if server.visualizationEnabled {
 				_ = server.visualization.Close(context.Background())
 			}
+
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -296,6 +309,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	select {
 	case <-server.done:
 		server.lifecycleMu.Unlock()
+
 		return server.stopErr
 	default:
 	}
@@ -334,6 +348,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.stopErr = errors.Join(shutdownErrors...)
 	close(server.done)
 	server.lifecycleMu.Unlock()
+
 	return server.stopErr
 }
 
@@ -359,6 +374,7 @@ func (server *Server) startMCPHTTP() error {
 			server.Stop()
 		}
 	}()
+
 	return nil
 }
 
@@ -372,6 +388,7 @@ func (server *Server) Done() <-chan struct{} { return server.done }
 func (server *Server) Err() error {
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
+
 	return errors.Join(server.startErr, server.stopErr)
 }
 
@@ -390,6 +407,7 @@ func (server *Server) VisualizationURL() string {
 	if server.visualization == nil || !server.visualizationEnabled {
 		return ""
 	}
+
 	return server.visualization.URL()
 }
 
@@ -400,6 +418,7 @@ func (server *Server) MCPURL() string {
 	if server.mcpListener == nil {
 		return ""
 	}
+
 	return listenerURL(server.mcpListener, fsmmcp.Endpoint(server.config.MCP.Endpoint))
 }
 
@@ -414,6 +433,7 @@ func defaultStoreKey(definition visualization.Definition, registration visualiza
 	if key == "" {
 		key = strings.TrimSpace(definition.ID)
 	}
+
 	return key
 }
 
@@ -439,6 +459,7 @@ func joinRegistrationPath(prefix, child string) string {
 	if child == "" {
 		return prefix
 	}
+
 	return prefix + "/" + child
 }
 
@@ -447,6 +468,7 @@ func isNilManagedFSM(machine RegisterableFSMI) bool {
 		return true
 	}
 	value := reflect.ValueOf(machine)
+
 	return value.Kind() == reflect.Pointer && value.IsNil()
 }
 
@@ -458,5 +480,6 @@ func listenerURL(listener net.Listener, endpoint string) string {
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}
+
 	return "http://" + net.JoinHostPort(host, port) + endpoint
 }

@@ -51,6 +51,7 @@ func (fsm *FSM[T]) BindStore(ctx context.Context, backend store.StoreI, key stri
 		if err = fsm.saveSnapshot(ctx, store.Trace{}, true); err != nil {
 			fsm.UnbindStore()
 		}
+
 		return err
 	}
 	if err != nil {
@@ -61,6 +62,7 @@ func (fsm *FSM[T]) BindStore(ctx context.Context, backend store.StoreI, key stri
 	}
 	fsm.bindStore(backend, key)
 	fsm.notifyRuntimeObservers(nil)
+
 	return nil
 }
 
@@ -96,6 +98,7 @@ func (fsm *FSM[T]) Save(ctx context.Context) error {
 		return ErrorEventProcessing
 	}
 	defer fsm.eventLock.Unlock()
+
 	return fsm.saveSnapshot(ctx, store.Trace{}, true)
 }
 
@@ -139,6 +142,7 @@ func (fsm *FSM[T]) restoreRecord(record store.Record) error {
 		fsm.Payload = payload
 	}
 	fsm.stateLock.Unlock()
+
 	return nil
 }
 
@@ -153,6 +157,7 @@ func (fsm *FSM[T]) knownState(state FSMState) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -173,6 +178,7 @@ func (fsm *FSM[T]) persistTrace(ctx context.Context, trace TransitionTrace) erro
 	if trace.Error != nil {
 		storeTrace.Error = trace.Error.Error()
 	}
+
 	return fsm.saveSnapshot(ctx, storeTrace, trace.TransitionResult)
 }
 
@@ -203,6 +209,7 @@ func (fsm *FSM[T]) saveSnapshot(ctx context.Context, trace store.Trace, success 
 	if err := backend.Save(ctx, record); err != nil {
 		return fmt.Errorf("%w: save %q: %v", ErrPersistenceFailed, key, err)
 	}
+
 	return nil
 }
 
@@ -217,8 +224,10 @@ func (fsm *FSM[T]) storeTransitions() []store.Transition {
 		if transitions[i].FromState != transitions[j].FromState {
 			return transitions[i].FromState < transitions[j].FromState
 		}
+
 		return transitions[i].Event < transitions[j].Event
 	})
+
 	return transitions
 }
 

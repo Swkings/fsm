@@ -21,6 +21,7 @@ func listFSMs(registry *visualization.Server, input MCPListFSMsInput) MCPListFSM
 		}
 		items = append(items, summary)
 	}
+
 	return MCPListFSMsOutput{FSMs: items, Count: len(items)}
 }
 
@@ -29,6 +30,7 @@ func getFSM(registry *visualization.Server, input MCPGetFSMInput) (*mcpsdk.CallT
 	if !exists {
 		return nil, MCPGetFSMOutput{}, fmt.Errorf("fsm %q is not registered", input.ID)
 	}
+
 	return nil, MCPGetFSMOutput{FSM: newMCPFSMSnapshot(snapshot)}, nil
 }
 
@@ -50,6 +52,7 @@ func listTraces(registry *visualization.Server, input MCPListTracesInput) (*mcps
 		traces = traces[len(traces)-limit:]
 	}
 	mapped := makeMCPTraceSnapshots(traces)
+
 	return nil, MCPListTracesOutput{ID: id, Traces: mapped, Count: len(mapped)}, nil
 }
 
@@ -69,6 +72,7 @@ func newMCPFSMSnapshot(snapshot visualization.Snapshot) MCPFSMSnapshot {
 		payloadError = snapshot.PayloadError.Error()
 	}
 	payload, payloadError := decodeMCPPayload(snapshot.Payload, payloadError)
+
 	return MCPFSMSnapshot{
 		MCPFSMSummary: newMCPFSMSummary(snapshot), Payload: payload,
 		PayloadError: payloadError, CollectionError: snapshot.CollectionError,
@@ -90,11 +94,13 @@ func makeMCPTraceSnapshots(traces []visualization.TraceSnapshot) []MCPTraceSnaps
 			EndTime: trace.EndTime, Duration: trace.Duration,
 		}
 	}
+
 	return result
 }
 
 func newMCPMetadataSnapshot(metadata visualization.MetadataSnapshot) MCPMetadataSnapshot {
 	payload, payloadError := decodeMCPPayload(metadata.Payload, metadata.PayloadError)
+
 	return MCPMetadataSnapshot{
 		InstanceID: metadata.InstanceID, TransitionID: metadata.TransitionID,
 		Name: metadata.Name, Description: metadata.Description, PreviousState: metadata.PreviousState,
@@ -112,7 +118,9 @@ func decodeMCPPayload(raw json.RawMessage, payloadError string) (any, string) {
 		if payloadError == "" {
 			payloadError = err.Error()
 		}
+
 		return string(raw), payloadError
 	}
+
 	return payload, payloadError
 }

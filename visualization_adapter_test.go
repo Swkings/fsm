@@ -29,6 +29,7 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 		"opened",
 		Handler[*visualizationTestPayload]{Handler: func(current *FSM[*visualizationTestPayload], _ ...any) error {
 			current.Payload.Count++
+
 			return nil
 		}},
 	))

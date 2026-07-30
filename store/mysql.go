@@ -36,8 +36,10 @@ func newMySQL(cfg config.MySQL) (*mysqlStore, error) {
 	backend := &mysqlStore{db: db, table: cfg.Table}
 	if err = backend.ready(context.Background()); err != nil {
 		_ = db.Close()
+
 		return nil, err
 	}
+
 	return backend, nil
 }
 
@@ -47,6 +49,7 @@ func (store *mysqlStore) Descriptor() Descriptor {
 
 func (store *mysqlStore) ready(ctx context.Context) error {
 	_, err := store.db.ExecContext(ctx, fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (id VARCHAR(64) PRIMARY KEY,fsm_key VARCHAR(255),success BOOLEAN,recorded_at BIGINT,data LONGTEXT,INDEX(fsm_key,success,recorded_at))", store.table))
+
 	return err
 }
 
@@ -55,6 +58,7 @@ func (store *mysqlStore) Save(ctx context.Context, record Record) error {
 	if err == nil {
 		_, err = store.db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s (id,fsm_key,success,recorded_at,data) VALUES(?,?,?,?,?)", store.table), record.ID, record.Key, record.Success, record.RecordedAt.UnixNano(), data)
 	}
+
 	return err
 }
 
@@ -90,6 +94,7 @@ func (store *mysqlStore) List(ctx context.Context, query Query) ([]Record, error
 		}
 		records = append(records, record)
 	}
+
 	return records, rows.Err()
 }
 
@@ -107,6 +112,7 @@ func (store *mysqlStore) Get(ctx context.Context, id string) (Record, error) {
 	if err == nil {
 		err = json.Unmarshal(data, &record)
 	}
+
 	return record, err
 }
 
@@ -119,6 +125,7 @@ func (store *mysqlStore) Delete(ctx context.Context, id string) error {
 	if count == 0 {
 		return ErrNotFound
 	}
+
 	return nil
 }
 func (store *mysqlStore) Close() error { return store.db.Close() }

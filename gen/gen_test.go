@@ -279,6 +279,7 @@ func assertGeneratedGoParses(t *testing.T, root string) {
 			return nil
 		}
 		_, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.AllErrors)
+
 		return err
 	})
 	if err != nil {

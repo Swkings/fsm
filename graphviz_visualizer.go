@@ -20,6 +20,7 @@ func getSortedTransitionKeys(transitions map[EventStateKey]FSMState) []EventStat
 		if sortedTransitionKeys[i].FromState == sortedTransitionKeys[j].FromState {
 			return sortedTransitionKeys[i].Event < sortedTransitionKeys[j].Event
 		}
+
 		return sortedTransitionKeys[i].FromState < sortedTransitionKeys[j].FromState
 	})
 
@@ -53,6 +54,7 @@ func getSortedStates(transitions map[EventStateKey]FSMState, additionalStates ..
 		statesToIDMap[state] = fmt.Sprintf("id%d", i)
 		states[i] = FSMState(state)
 	}
+
 	return states, statesToIDMap
 }
 

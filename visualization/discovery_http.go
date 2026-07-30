@@ -55,10 +55,12 @@ func (server *Server) handleDiscoveries(writer http.ResponseWriter, request *htt
 		var input discoveryRequest
 		if err := decodeJSONBody(writer, request, &input); err != nil {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
+
 			return
 		}
 		if input.RefreshIntervalSeconds < 0 || input.PullIntervalSeconds < 0 {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "intervals must not be negative"})
+
 			return
 		}
 		discovery := &HTTPServiceDiscovery{
@@ -71,12 +73,14 @@ func (server *Server) handleDiscoveries(writer http.ResponseWriter, request *htt
 		})
 		if err != nil {
 			writeJSON(writer, http.StatusConflict, map[string]string{"error": err.Error()})
+
 			return
 		}
 		views := server.DiscoverySnapshots()
 		for _, snapshot := range views {
 			if snapshot.ID == registration.ID() {
 				writeJSON(writer, http.StatusCreated, newDiscoveryView(snapshot))
+
 				return
 			}
 		}
@@ -90,6 +94,7 @@ func (server *Server) handleDiscoveryDetail(writer http.ResponseWriter, request 
 	path := strings.Trim(strings.TrimPrefix(request.URL.Path, "/api/discoveries/"), "/")
 	if path == "" {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": ErrDiscoveryNotFound.Error()})
+
 		return
 	}
 	parts := strings.Split(path, "/")
@@ -97,6 +102,7 @@ func (server *Server) handleDiscoveryDetail(writer http.ResponseWriter, request 
 	if len(parts) == 2 && parts[1] == "refresh" {
 		if request.Method != http.MethodPost {
 			writer.WriteHeader(http.StatusMethodNotAllowed)
+
 			return
 		}
 		if err := server.RefreshDiscovery(request.Context(), id); err != nil {
@@ -105,27 +111,33 @@ func (server *Server) handleDiscoveryDetail(writer http.ResponseWriter, request 
 				status = http.StatusNotFound
 			}
 			writeJSON(writer, status, map[string]string{"error": err.Error()})
+
 			return
 		}
 		for _, snapshot := range server.DiscoverySnapshots() {
 			if snapshot.ID == id {
 				writeJSON(writer, http.StatusOK, newDiscoveryView(snapshot))
+
 				return
 			}
 		}
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": ErrDiscoveryNotFound.Error()})
+
 		return
 	}
 	if len(parts) != 1 {
 		http.NotFound(writer, request)
+
 		return
 	}
 	if request.Method != http.MethodDelete {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
+
 		return
 	}
 	if !server.UnregisterDiscovery(id) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": ErrDiscoveryNotFound.Error()})
+
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
@@ -134,5 +146,6 @@ func (server *Server) handleDiscoveryDetail(writer http.ResponseWriter, request 
 func decodeJSONBody(writer http.ResponseWriter, request *http.Request, target any) error {
 	decoder := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 4<<20))
 	decoder.DisallowUnknownFields()
+
 	return decoder.Decode(target)
 }

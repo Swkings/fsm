@@ -81,16 +81,19 @@ func newWorkerFSM() *fsm.FSM[*workerPayload] {
 		fsm.NewTransitionItem("start", "idle", "running", fsm.Handler[*workerPayload]{
 			Handler: func(machine *fsm.FSM[*workerPayload], _ ...any) error {
 				machine.Payload.Progress = 50
+
 				return nil
 			},
 		}),
 		fsm.NewTransitionItem("finish", "running", "done", fsm.Handler[*workerPayload]{
 			Handler: func(machine *fsm.FSM[*workerPayload], _ ...any) error {
 				machine.Payload.Progress = 100
+
 				return nil
 			},
 		}),
 	)
+
 	return worker
 }
 
@@ -115,6 +118,7 @@ func serveRegistry(clientServerURL string) (string, func(), error) {
 		defer cancel()
 		_ = httpServer.Shutdown(shutdownContext)
 	}
+
 	return "http://" + listener.Addr().String() + "/visualization-servers", closeServer, nil
 }
 

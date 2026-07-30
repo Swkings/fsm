@@ -99,6 +99,7 @@ func normalizeRegistration(definition Definition, config RegistrationConfig, sup
 		}
 	}
 	completeDefinition(&definition)
+
 	return definition, config, nil
 }
 
@@ -137,6 +138,7 @@ func sortedSet(values map[string]struct{}) []string {
 		result = append(result, value)
 	}
 	sort.Strings(result)
+
 	return result
 }
 
@@ -158,6 +160,7 @@ func NormalizePath(path string) (string, error) {
 		}
 		segments[index] = segment
 	}
+
 	return strings.Join(segments, "/"), nil
 }
 
@@ -165,6 +168,7 @@ func cloneDefinition(definition Definition) Definition {
 	definition.States = append([]string(nil), definition.States...)
 	definition.Events = append([]string(nil), definition.Events...)
 	definition.Transitions = append([]TransitionSnapshot(nil), definition.Transitions...)
+
 	return definition
 }
 
@@ -174,12 +178,14 @@ func cloneTraceSnapshots(traces []TraceSnapshot) []TraceSnapshot {
 		cloned[index].EntryMetadata.Payload = append(json.RawMessage(nil), cloned[index].EntryMetadata.Payload...)
 		cloned[index].ExitMetadata.Payload = append(json.RawMessage(nil), cloned[index].ExitMetadata.Payload...)
 	}
+
 	return cloned
 }
 
 func cloneRealtimeData(data RealtimeData) RealtimeData {
 	data.Payload = append(json.RawMessage(nil), data.Payload...)
 	data.Traces = cloneTraceSnapshots(data.Traces)
+
 	return data
 }
 
@@ -190,5 +196,6 @@ func cloneSnapshot(snapshot Snapshot) Snapshot {
 	snapshot.Transitions = append([]TransitionSnapshot(nil), snapshot.Transitions...)
 	snapshot.AvailableTransitions = append([]TransitionSnapshot(nil), snapshot.AvailableTransitions...)
 	snapshot.Traces = cloneTraceSnapshots(snapshot.Traces)
+
 	return snapshot
 }

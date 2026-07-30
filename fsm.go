@@ -53,7 +53,12 @@ type TransitionItem[T PayloadI] struct {
 
 // NewTransitionItem creates one transition rule.
 func NewTransitionItem[T PayloadI](event FSMEvent, fromState, toState FSMState, handler Handler[T]) TransitionItem[T] {
-	return TransitionItem[T]{Event: event, FromState: fromState, ToState: toState, Handler: handler}
+	return TransitionItem[T]{
+		Event:     event,
+		FromState: fromState,
+		ToState:   toState,
+		Handler:   handler,
+	}
 }
 
 // // FSM is a finite state machine with a mutable application payload.
@@ -110,11 +115,19 @@ type FSM[T PayloadI] struct {
 // NewFSM creates an FSM in initState with the supplied payload.
 func NewFSM[T PayloadI](fsmName FSMName, initState FSMState, payload T) *FSM[T] {
 	return &FSM[T]{
-		InstanceID: uuid.NewString(), TtId: uuid.NewString(), Name: fsmName,
-		fromState: StateEmpty, fromEvent: EventEmpty, currentState: initState,
-		processingEvent: EventEmpty, processingContext: context.Background(),
-		transitions: make(map[EventStateKey]FSMState), handlers: make(map[EventStateKey]Handler[T]),
-		eventSearch: make(map[FSMState][]FSMEvent), eventQueue: newEventQueue(),
-		runtimeObservers: make(map[string]func(*TransitionTrace)), Payload: payload,
+		InstanceID:        uuid.NewString(),
+		TtId:              uuid.NewString(),
+		Name:              fsmName,
+		fromState:         StateEmpty,
+		fromEvent:         EventEmpty,
+		currentState:      initState,
+		processingEvent:   EventEmpty,
+		processingContext: context.Background(),
+		transitions:       make(map[EventStateKey]FSMState),
+		handlers:          make(map[EventStateKey]Handler[T]),
+		eventSearch:       make(map[FSMState][]FSMEvent),
+		eventQueue:        newEventQueue(),
+		runtimeObservers:  make(map[string]func(*TransitionTrace)),
+		Payload:           payload,
 	}
 }

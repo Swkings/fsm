@@ -16,6 +16,7 @@ func GenFSM(outFile string, fsmFileName string, tplFileDir string, data FSMData,
 
 	outputPath := filepath.Join(outFile, data.Package, "fsmfactory.go")
 	fmt.Printf("gen fsmFactoryFile: %v\n", outputPath)
+
 	return renderTemplateFile(outputPath, filepath.Join(tplFileDir, "fsm.tpl"), TemplateData{
 		FSMFileName: fsmFileName,
 		FSMData:     data,
@@ -43,5 +44,6 @@ func renderTemplateFile(outputPath string, templatePath string, data any) error 
 	if err := os.WriteFile(outputPath, content, 0o644); err != nil {
 		return fmt.Errorf("write generated file %q: %w", outputPath, err)
 	}
+
 	return nil
 }

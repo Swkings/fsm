@@ -13,6 +13,7 @@ import (
 func (client *testPushClient) VisualizationRegistrationConfig() RegistrationConfig {
 	client.mu.Lock()
 	defer client.mu.Unlock()
+
 	return RegistrationConfig{
 		DisplayName: "Registered " + client.definition.ID,
 		Path:        "workers/" + client.definition.ID,
@@ -93,6 +94,7 @@ func TestClientServerDiscoveryAggregatesMultipleServers(t *testing.T) {
 	discovery := ServiceDiscoveryFunc(func(context.Context) ([]DiscoveredService, error) {
 		sourceMu.RLock()
 		defer sourceMu.RUnlock()
+
 		return append([]DiscoveredService(nil), discoveredServers...), nil
 	})
 
@@ -109,6 +111,7 @@ func TestClientServerDiscoveryAggregatesMultipleServers(t *testing.T) {
 	waitFor(t, func() bool {
 		first, firstOK := aggregate.Snapshot("remote:client-a:worker")
 		second, secondOK := aggregate.Snapshot("remote:client-b:worker")
+
 		return firstOK && secondOK && first.CurrentState == "idle" && second.CurrentState == "waiting" &&
 			first.Path == "production/clients/a/Workers/A" &&
 			second.Path == "production/clients/b/Workers/B"
@@ -119,6 +122,7 @@ func TestClientServerDiscoveryAggregatesMultipleServers(t *testing.T) {
 	}
 	waitFor(t, func() bool {
 		snapshot, exists := aggregate.Snapshot("remote:client-a:worker")
+
 		return exists && snapshot.CurrentState == "running"
 	})
 
@@ -128,6 +132,7 @@ func TestClientServerDiscoveryAggregatesMultipleServers(t *testing.T) {
 	waitFor(t, func() bool {
 		_, firstExists := aggregate.Snapshot("remote:client-a:worker")
 		_, secondExists := aggregate.Snapshot("remote:client-b:worker")
+
 		return !firstExists && secondExists
 	})
 }
@@ -160,5 +165,6 @@ func newExportedTestServer(
 	}); err != nil {
 		t.Fatal(err)
 	}
+
 	return server, httptest.NewServer(server.Handler()), client
 }

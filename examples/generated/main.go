@@ -95,6 +95,7 @@ func loadExampleConfig(path string) (exampleConfig, error) {
 	if err := conf.Load(path, &appConfig); err != nil {
 		return exampleConfig{}, fmt.Errorf("load generated example config %q: %w", path, err)
 	}
+
 	return appConfig, nil
 }
 
@@ -104,6 +105,7 @@ func runRandomEvents(ctx context.Context, machine *fsm.FSM[*types.Payload]) erro
 		if len(events) == 0 {
 			fmt.Printf("terminal state=%s; visualization remains available until shutdown\n", machine.GetCurrentState())
 			<-ctx.Done()
+
 			return nil
 		}
 		delay := randomEventInterval()
@@ -122,6 +124,7 @@ func runRandomEvents(ctx context.Context, machine *fsm.FSM[*types.Payload]) erro
 			}
 		case <-ctx.Done():
 			timer.Stop()
+
 			return nil
 		}
 	}
@@ -129,6 +132,7 @@ func runRandomEvents(ctx context.Context, machine *fsm.FSM[*types.Payload]) erro
 
 func randomEventInterval() time.Duration {
 	seconds := int(maxEventInterval/time.Second-minEventInterval/time.Second) + 1
+
 	return minEventInterval + time.Duration(rand.IntN(seconds))*time.Second
 }
 
@@ -160,5 +164,6 @@ func process(machine *fsm.FSM[*types.Payload], event fsm.FSMEvent, params ...any
 		machine.Payload.MoveSpeed,
 		machine.Payload.VerticalSpeed,
 	)
+
 	return nil
 }

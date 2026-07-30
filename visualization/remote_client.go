@@ -64,6 +64,7 @@ func (discovery *HTTPServiceDiscovery) Discover(ctx context.Context) ([]Discover
 				PullInterval: durationFromSeconds(item.PullIntervalSeconds),
 			})
 		}
+
 		return services, nil
 	}
 
@@ -74,11 +75,13 @@ func (discovery *HTTPServiceDiscovery) Discover(ctx context.Context) ([]Discover
 		if key == "" {
 			key = endpoint
 		}
+
 		return []DiscoveredService{{Key: key, Endpoint: endpoint}}, nil
 	} else {
 		if registryErr == nil {
 			registryErr = errors.New("discovery response does not contain services")
 		}
+
 		return nil, fmt.Errorf(
 			"discover visualization servers from %s: %w",
 			endpoint,
@@ -102,6 +105,7 @@ func (client *remotePullClient) VisualizationDefinition() Definition {
 	if client.registrationID != "" {
 		definition.ID = client.registrationID
 	}
+
 	return definition
 }
 
@@ -110,6 +114,7 @@ func (client *remotePullClient) VisualizationSnapshot(ctx context.Context) (Real
 	if err := getRemoteJSON(ctx, client.client, remoteResourceEndpoint(client.endpoint, "/realtime"), &wire); err != nil {
 		return RealtimeData{}, err
 	}
+
 	return wire.realtimeData(), nil
 }
 
@@ -125,12 +130,14 @@ func getRemoteJSON(ctx context.Context, client *http.Client, endpoint string, ta
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
+
 		return fmt.Errorf("remote endpoint returned %s: %s", response.Status, strings.TrimSpace(string(message)))
 	}
 	decoder := json.NewDecoder(io.LimitReader(response.Body, 4<<20))
 	if err := decoder.Decode(target); err != nil {
 		return fmt.Errorf("decode remote response: %w", err)
 	}
+
 	return nil
 }
 
@@ -151,6 +158,7 @@ func newRealtimeDataWire(data RealtimeData) realtimeDataWire {
 	if data.PayloadError != nil {
 		payloadError = data.PayloadError.Error()
 	}
+
 	return realtimeDataWire{
 		TransitionID: data.TransitionID, CurrentState: data.CurrentState,
 		PreviousState: data.PreviousState, PreviousEvent: data.PreviousEvent,
@@ -164,6 +172,7 @@ func (wire realtimeDataWire) realtimeData() RealtimeData {
 	if wire.PayloadError != "" {
 		payloadError = errors.New(wire.PayloadError)
 	}
+
 	return RealtimeData{
 		TransitionID: wire.TransitionID, CurrentState: wire.CurrentState,
 		PreviousState: wire.PreviousState, PreviousEvent: wire.PreviousEvent,
@@ -177,15 +186,18 @@ func NewClientHandler(client ClientI) http.Handler {
 	mux.HandleFunc("/definition", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {
 			writer.WriteHeader(http.StatusMethodNotAllowed)
+
 			return
 		}
 		if isNilInterface(client) {
 			writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": ErrInvalidClient.Error()})
+
 			return
 		}
 		definition, err := clientDefinition(client)
 		if err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+
 			return
 		}
 		writeJSON(writer, http.StatusOK, definition)
@@ -193,19 +205,23 @@ func NewClientHandler(client ClientI) http.Handler {
 	mux.HandleFunc("/realtime", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {
 			writer.WriteHeader(http.StatusMethodNotAllowed)
+
 			return
 		}
 		if isNilInterface(client) {
 			writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": ErrInvalidClient.Error()})
+
 			return
 		}
 		data, err := clientRealtimeData(client, request.Context())
 		if err != nil {
 			writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+
 			return
 		}
 		writeJSON(writer, http.StatusOK, newRealtimeDataWire(data))
 	})
+
 	return mux
 }
 
@@ -213,5 +229,6 @@ func durationFromSeconds(seconds float64) time.Duration {
 	if seconds <= 0 {
 		return 0
 	}
+
 	return time.Duration(seconds * float64(time.Second))
 }

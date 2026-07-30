@@ -56,6 +56,7 @@ func (receipt *AsyncEventReceipt) Done() <-chan struct{} { return receipt.done }
 func (receipt *AsyncEventReceipt) Result() (result AsyncEventResult, ok bool) {
 	receipt.resultMu.RLock()
 	defer receipt.resultMu.RUnlock()
+
 	return receipt.result, receipt.completed
 }
 
@@ -67,20 +68,24 @@ func (receipt *AsyncEventReceipt) Wait(ctx context.Context) (AsyncEventResult, e
 	select {
 	case <-receipt.done:
 		result, _ := receipt.Result()
+
 		return result, nil
 	default:
 	}
 	select {
 	case <-receipt.done:
 		result, _ := receipt.Result()
+
 		return result, nil
 	case <-ctx.Done():
 		select {
 		case <-receipt.done:
 			result, _ := receipt.Result()
+
 			return result, nil
 		default:
 		}
+
 		return AsyncEventResult{}, ctx.Err()
 	}
 }
@@ -93,6 +98,7 @@ func (receipt *AsyncEventReceipt) complete(result AsyncEventResult) (completed b
 		close(receipt.done)
 		completed = true
 	})
+
 	return completed
 }
 
@@ -114,6 +120,7 @@ func WithEventPriority(priority EventPriority) AsyncEventOption {
 			return fmt.Errorf("%w: %d", ErrorInvalidEventPriority, priority)
 		}
 		config.priority = priority
+
 		return nil
 	}
 }
@@ -125,6 +132,7 @@ func WithEventTTL(ttl time.Duration) AsyncEventOption {
 			return fmt.Errorf("%w: %s", ErrorInvalidEventTTL, ttl)
 		}
 		config.ttl, config.expiresAt = ttl, time.Time{}
+
 		return nil
 	}
 }
@@ -133,6 +141,7 @@ func WithEventTTL(ttl time.Duration) AsyncEventOption {
 func WithEventExpiresAt(expiresAt time.Time) AsyncEventOption {
 	return func(config *asyncEventConfig) error {
 		config.expiresAt, config.ttl = expiresAt, 0
+
 		return nil
 	}
 }
@@ -144,6 +153,7 @@ func WithEventContext(ctx context.Context) AsyncEventOption {
 			return ErrorNilEventContext
 		}
 		config.ctx = ctx
+
 		return nil
 	}
 }
@@ -155,6 +165,7 @@ func WithEventNotify(notify chan<- AsyncEventResult) AsyncEventOption {
 			return ErrorNilEventNotify
 		}
 		config.notify = notify
+
 		return nil
 	}
 }
@@ -193,6 +204,7 @@ func (fsm *FSM[T]) SubmitEvent(event FSMEvent, options ...AsyncEventOption) (*As
 	if err := fsm.eventQueue.enqueue(item, func() {
 		if fsm.eventQueue.remove(item) {
 			fsm.rejectQueuedEvent(item, AsyncEventExpired, context.DeadlineExceeded)
+
 			return
 		}
 		fsm.eventQueue.signal()
@@ -206,6 +218,7 @@ func (fsm *FSM[T]) SubmitEvent(event FSMEvent, options ...AsyncEventOption) (*As
 			case <-item.ctx.Done():
 				if fsm.eventQueue.remove(item) {
 					fsm.rejectQueuedEvent(item, AsyncEventCanceled, item.ctx.Err())
+
 					return
 				}
 				fsm.eventQueue.signal()
@@ -214,6 +227,7 @@ func (fsm *FSM[T]) SubmitEvent(event FSMEvent, options ...AsyncEventOption) (*As
 		}()
 	}
 	fsm.eventQueue.signal()
+
 	return item.receipt, nil
 }
 
@@ -221,6 +235,7 @@ func (fsm *FSM[T]) SubmitEvent(event FSMEvent, options ...AsyncEventOption) (*As
 func (fsm *FSM[T]) PendingEventCount() (high, low int) {
 	fsm.eventQueue.mu.Lock()
 	defer fsm.eventQueue.mu.Unlock()
+
 	return len(fsm.eventQueue.high), len(fsm.eventQueue.low)
 }
 
@@ -235,5 +250,6 @@ func (fsm *FSM[T]) Close() error {
 		fsm.eventQueue.signal()
 	}
 	<-fsm.eventQueue.done
+
 	return nil
 }
