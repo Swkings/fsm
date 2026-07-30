@@ -40,16 +40,17 @@ type ReplayRecord struct {
 }
 
 type ReplayRecordSummary struct {
-	ID           string    `json:"id"`
-	SourceID     string    `json:"sourceId"`
-	FSMID        string    `json:"fsmId"`
-	DisplayName  string    `json:"displayName"`
-	Path         string    `json:"path,omitempty"`
-	TransitionID string    `json:"transitionId,omitempty"`
-	State        string    `json:"state"`
-	Event        string    `json:"event,omitempty"`
-	Success      bool      `json:"success"`
-	RecordedAt   time.Time `json:"recordedAt"`
+	ID           string        `json:"id"`
+	SourceID     string        `json:"sourceId"`
+	FSMID        string        `json:"fsmId"`
+	DisplayName  string        `json:"displayName"`
+	Path         string        `json:"path,omitempty"`
+	TransitionID string        `json:"transitionId,omitempty"`
+	State        string        `json:"state"`
+	Event        string        `json:"event,omitempty"`
+	Success      bool          `json:"success"`
+	RecordedAt   time.Time     `json:"recordedAt"`
+	Trace        TraceSnapshot `json:"trace"`
 }
 
 type replaySource struct {
@@ -183,6 +184,7 @@ func (hub *replayHub) list(ctx context.Context, sourceID, key string, limit int)
 			DisplayName: record.DisplayName, Path: record.Category,
 			TransitionID: record.Metadata.TransitionID, State: record.Metadata.CurrentState,
 			Event: record.Trace.Event, Success: record.Success, RecordedAt: record.RecordedAt,
+			Trace: storeTraceSnapshot(record.Trace),
 		})
 	}
 	return summaries, nil

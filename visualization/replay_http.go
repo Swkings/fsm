@@ -3,9 +3,52 @@ package visualization
 import (
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
+
+type replayDirectoryView struct {
+	Path        string   `json:"path"`
+	Parent      string   `json:"parent,omitempty"`
+	Directories []string `json:"directories"`
+}
+
+func (s *Server) handleReplayDirectories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	directory := strings.TrimSpace(r.URL.Query().Get("path"))
+	if directory == "" {
+		directory, _ = os.Getwd()
+	}
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	absolute = filepath.Clean(absolute)
+	entries, err := os.ReadDir(absolute)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	directories := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			directories = append(directories, entry.Name())
+		}
+	}
+	sort.Strings(directories)
+	parent := filepath.Dir(absolute)
+	if parent == absolute {
+		parent = ""
+	}
+	writeJSON(w, http.StatusOK, replayDirectoryView{Path: absolute, Parent: parent, Directories: directories})
+}
 
 func (s *Server) handleReplaySources(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {

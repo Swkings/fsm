@@ -33,6 +33,20 @@ type StoreSource struct {
 type JSONL struct {
 	Directory string `json:"directory,optional"`
 	Filename  string `json:"filename,optional"`
+	SSH       *SSH   `json:"ssh,optional"`
+}
+
+// SSH 配置通过 SFTP 访问远程 JSONL 目录。KnownHostsFile 为空时使用
+// ~/.ssh/known_hosts；仅在受信网络中才应启用 InsecureIgnoreHostKey。
+type SSH struct {
+	Address               string `json:"address"`
+	Username              string `json:"username,optional"`
+	Password              string `json:"password,optional"`
+	PrivateKeyFile        string `json:"privateKeyFile,optional"`
+	PrivateKeyPassphrase  string `json:"privateKeyPassphrase,optional"`
+	KnownHostsFile        string `json:"knownHostsFile,optional"`
+	InsecureIgnoreHostKey bool   `json:"insecureIgnoreHostKey,optional"`
+	TimeoutSeconds        int    `json:"timeoutSeconds,optional"`
 }
 
 type MySQL struct {

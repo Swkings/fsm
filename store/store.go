@@ -34,11 +34,14 @@ func New(cfg config.Store) (Store, error) {
 	}
 	switch driver {
 	case config.StoreDriverJSONL:
-		if cfg.JSONL.Directory == "" {
-			cfg.JSONL.Directory = filepath.Join("data", "fsm")
-		}
 		if cfg.JSONL.Filename == "" {
 			cfg.JSONL.Filename = "fsm.jsonl"
+		}
+		if cfg.JSONL.SSH != nil && strings.TrimSpace(cfg.JSONL.SSH.Address) != "" {
+			return newSSHJSONL(cfg.JSONL)
+		}
+		if cfg.JSONL.Directory == "" {
+			cfg.JSONL.Directory = filepath.Join("data", "fsm")
 		}
 		return newJSONL(cfg.JSONL)
 	case config.StoreDriverMySQL:

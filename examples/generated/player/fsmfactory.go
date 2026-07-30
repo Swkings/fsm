@@ -10,7 +10,7 @@ import (
 )
 
 func NewFSMPlayerAction(payload *types.Payload) *fsm.FSM[*types.Payload] {
-	f := fsm.NewFSM[*types.Payload](types.FSMNamePlayerAction, types.StateEnum.IDLE, payload)
+	f := fsm.NewFSM(types.FSMNamePlayerAction, types.StateEnum.IDLE, payload)
 	f.Describe = "玩家移动、跳跃、战斗、受击、死亡与复活状态机"
 
 	f.SetTransitions(

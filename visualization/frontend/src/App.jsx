@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from './api.js'
 import StateGraph from './StateGraph.jsx'
 
@@ -130,8 +131,59 @@ function PayloadContent({ item }) {
   )
 }
 function RightSidebar({ item, payloadOpen, onPayloadToggle }) {
+  const defaultWidth = window.innerWidth <= 520 ? 220 : window.innerWidth <= 820 ? 280 : window.innerWidth <= 1100 ? 320 : 400
+  const minimumWidth = 220
+  const [width, setWidth] = useState(() => {
+    const value = Number(stored('fsm-right-sidebar-width', String(defaultWidth)))
+    return Math.round(Math.max(minimumWidth, Math.min(window.innerWidth * .6, Number.isFinite(value) ? value : defaultWidth)))
+  })
+  const [resizing, setResizing] = useState(false)
+  const resizeRef = useRef(null)
+  const maximumWidth = () => Math.max(minimumWidth, Math.min(720, window.innerWidth * .6))
+  const setClampedWidth = (value, persist = false) => {
+    const next = Math.round(Math.max(minimumWidth, Math.min(maximumWidth(), value)))
+    setWidth(next)
+    if (resizeRef.current) resizeRef.current.width = next
+    if (persist) remember('fsm-right-sidebar-width', next)
+    return next
+  }
+  const startResize = (event) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    resizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width, width }
+    setResizing(true)
+  }
+  const moveResize = (event) => {
+    const resize = resizeRef.current
+    if (!resize || resize.pointerId !== event.pointerId) return
+    setClampedWidth(resize.startWidth + resize.startX - event.clientX)
+  }
+  const stopResize = (event) => {
+    const resize = resizeRef.current
+    if (!resize || (event.pointerId !== undefined && resize.pointerId !== event.pointerId)) return
+    resizeRef.current = null
+    setResizing(false)
+    remember('fsm-right-sidebar-width', resize.width)
+  }
+  const resizeWithKeyboard = (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home') return
+    event.preventDefault()
+    setClampedWidth(event.key === 'Home' ? defaultWidth : width + (event.key === 'ArrowLeft' ? 20 : -20), true)
+  }
+  useEffect(() => { document.documentElement.style.setProperty('--right-sidebar-width', `${width}px`) }, [width])
+  useEffect(() => {
+    const fit = () => setClampedWidth(width)
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [width])
+  useEffect(() => {
+    document.body.classList.toggle('right-sidebar-resizing', resizing)
+    return () => document.body.classList.remove('right-sidebar-resizing')
+  }, [resizing])
   return (
-    <aside className="right-sidebar" aria-label="FSM Inspector">
+    <aside className={`right-sidebar${resizing ? ' resizing' : ''}`} aria-label="FSM Inspector">
+      <div className="right-sidebar-resize" role="separator" aria-label="调整右侧边栏宽度" aria-orientation="vertical" aria-valuemin={minimumWidth} aria-valuemax={Math.round(maximumWidth())} aria-valuenow={width} tabIndex="0" title="拖动调整宽度 · 双击恢复默认" onPointerDown={startResize} onPointerMove={moveResize} onPointerUp={stopResize} onPointerCancel={stopResize} onLostPointerCapture={stopResize} onKeyDown={resizeWithKeyboard} onDoubleClick={() => setClampedWidth(defaultWidth, true)} />
       <nav className="right-sidebar-nav" aria-label="FSM Inspector 面板">
         <button className={["inspector-tab", payloadOpen ? "active" : ""].filter(Boolean).join(" ")} type="button" disabled={!item} aria-controls="payloadPanel" aria-expanded={payloadOpen} onClick={() => onPayloadToggle(!payloadOpen)}>
           <strong>Payload</strong>
@@ -144,28 +196,179 @@ function RightSidebar({ item, payloadOpen, onPayloadToggle }) {
   )
 }
 
-function TraceMetadata({ trace }) {
+function traceTimeMillis(trace) {
+  const nanos = Number(trace?.beginTime)
+  return Number.isFinite(nanos) && nanos > 0 ? nanos / 1000000 : 0
+}
+function formatTraceTime(trace) {
+  const millis = traceTimeMillis(trace)
+  return millis ? new Date(millis).toLocaleString() : '-'
+}
+function TraceContextMenu({ menu, onView }) {
+  if (!menu) return null
+  return createPortal(
+    <div
+      className="trace-context-menu"
+      style={{ top: menu.top, left: menu.left }}
+      role="menu"
+      aria-label="Trace 操作"
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <button type="button" role="menuitem" onClick={() => onView(menu.trace)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>
+        <span><strong>查看 FSM 数据</strong><small>进入和退出快照</small></span>
+      </button>
+    </div>,
+    document.body,
+  )
+}
+function TraceMetadataDialog({ trace, onClose }) {
+  if (!trace) return null
   const entry = trace.entryMetadata
   const exit = trace.exitMetadata
-  return (
-    <details className="trace-metadata">
-      <summary>进入 / 退出</summary>
+  return createPortal(
+    <div className="trace-metadata-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="trace-metadata-dialog" role="dialog" aria-modal="true" aria-labelledby="traceMetadataTitle">
+        <header>
+          <div><strong id="traceMetadataTitle">FSM 数据快照</strong><span>{trace.event || '-'} · {trace.fromState || '-'} → {trace.finalState || '-'}</span></div>
+          <button type="button" aria-label="关闭 FSM 数据" title="关闭" onClick={onClose}><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        </header>
       <div className="trace-metadata-grid">
         <section><strong>进入 FSM</strong><pre>{JSON.stringify(entry === undefined ? null : entry, null, 2)}</pre></section>
         <section><strong>退出 FSM</strong><pre>{JSON.stringify(exit === undefined ? null : exit, null, 2)}</pre></section>
       </div>
-    </details>
+      </section>
+    </div>,
+    document.body,
   )
 }
 
-function TracePanel({ traces }) {
+function TracePanel({ traces, selectedId = '', onSelect }) {
+  const defaultHeight = 440
+  const minimumHeight = 180
   const [expanded, setExpanded] = useState(false)
-  const ordered = useMemo(() => [...(traces || [])].reverse(), [traces])
-  const latest = ordered[0]
+  const [query, setQuery] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+  const [sortBy, setSortBy] = useState('newest')
+  const [contextMenu, setContextMenu] = useState(null)
+  const [metadataTrace, setMetadataTrace] = useState(null)
+  const [traceHeight, setTraceHeight] = useState(() => {
+    const value = Number(stored('fsm-trace-height', String(defaultHeight)))
+    return Number.isFinite(value) && value >= minimumHeight ? value : defaultHeight
+  })
+  const [resizing, setResizing] = useState(false)
+  const panelRef = useRef(null)
+  const resizeRef = useRef(null)
+  const allTraces = useMemo(() => [...(traces || [])], [traces])
+  const latest = useMemo(() => allTraces.reduce((current, trace) => !current || traceTimeMillis(trace) > traceTimeMillis(current) ? trace : current, null), [allTraces])
+  const visible = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase()
+    const startMillis = startTime ? new Date(startTime).getTime() : null
+    const endMillis = endTime ? new Date(endTime).getTime() : null
+    const filtered = allTraces.filter((trace) => {
+      const millis = traceTimeMillis(trace)
+      if (startMillis !== null && Number.isFinite(startMillis) && millis < startMillis) return false
+      if (endMillis !== null && Number.isFinite(endMillis) && millis > endMillis) return false
+      if (!needle) return true
+      const date = millis ? new Date(millis) : null
+      return [
+        trace.event,
+        trace.fromState,
+        trace.toState,
+        trace.finalState,
+        trace.success ? 'success' : 'failed',
+        trace.error,
+        trace.transitionId,
+        trace.beginTime,
+        trace.endTime,
+        date?.toLocaleString(),
+        date?.toLocaleTimeString(),
+        date?.toISOString(),
+      ].some((value) => String(value ?? '').toLocaleLowerCase().includes(needle))
+    })
+    return filtered.sort((left, right) => {
+      if (sortBy === 'oldest') return traceTimeMillis(left) - traceTimeMillis(right)
+      if (sortBy === 'duration-desc') return Number(right.duration || 0) - Number(left.duration || 0)
+      if (sortBy === 'duration-asc') return Number(left.duration || 0) - Number(right.duration || 0)
+      return traceTimeMillis(right) - traceTimeMillis(left)
+    })
+  }, [allTraces, endTime, query, sortBy, startTime])
+  useEffect(() => {
+    if (!contextMenu && !metadataTrace) return undefined
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return
+      setContextMenu(null)
+      setMetadataTrace(null)
+    }
+    const onPointerDown = (event) => {
+      if (contextMenu && !event.target.closest('.trace-context-menu')) setContextMenu(null)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [contextMenu, metadataTrace])
+  const filtered = query.trim() || startTime || endTime
+  const clearFilters = () => { setQuery(''); setStartTime(''); setEndTime('') }
+  const openTraceMenu = (event, trace) => {
+    event.preventDefault()
+    const rect = event.currentTarget.getBoundingClientRect()
+    const pointerX = event.clientX || rect.left + 24
+    const pointerY = event.clientY || rect.top + rect.height / 2
+    setMetadataTrace(null)
+    setContextMenu({
+      trace,
+      left: Math.max(8, Math.min(pointerX, window.innerWidth - 220)),
+      top: Math.max(8, Math.min(pointerY, window.innerHeight - 62)),
+    })
+  }
+  const viewMetadata = (trace) => {
+    setContextMenu(null)
+    setMetadataTrace(trace)
+  }
+  const maximumHeight = () => Math.max(minimumHeight, (panelRef.current?.parentElement?.getBoundingClientRect().height || window.innerHeight) - 28)
+  const setClampedHeight = (value, persist = false) => {
+    const height = Math.round(Math.max(minimumHeight, Math.min(maximumHeight(), value)))
+    setTraceHeight(height)
+    if (persist) remember('fsm-trace-height', height)
+    return height
+  }
+  const startTraceResize = (event) => {
+    if (!expanded || event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    resizeRef.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: panelRef.current?.getBoundingClientRect().height || traceHeight, height: traceHeight }
+    setResizing(true)
+  }
+  const moveTraceResize = (event) => {
+    const resize = resizeRef.current
+    if (!resize || resize.pointerId !== event.pointerId) return
+    resize.height = setClampedHeight(resize.startHeight + resize.startY - event.clientY)
+  }
+  const stopTraceResize = (event) => {
+    const resize = resizeRef.current
+    if (!resize || (event.pointerId !== undefined && resize.pointerId !== event.pointerId)) return
+    resizeRef.current = null
+    setResizing(false)
+    remember('fsm-trace-height', resize.height)
+  }
+  const resizeTraceWithKeyboard = (event) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Home') return
+    event.preventDefault()
+    setClampedHeight(event.key === 'Home' ? defaultHeight : traceHeight + (event.key === 'ArrowUp' ? 24 : -24), true)
+  }
+  useEffect(() => {
+    document.body.classList.toggle('trace-resizing', resizing)
+    return () => document.body.classList.remove('trace-resizing')
+  }, [resizing])
   return (
-    <section className={`monitor-panel trace-panel${expanded ? ' expanded' : ''}`} aria-labelledby="traceTitle">
+    <section ref={panelRef} className={`monitor-panel trace-panel${expanded ? ' expanded' : ''}${resizing ? ' resizing' : ''}`} style={expanded ? { height: `min(${traceHeight}px, calc(100% - 28px))` } : undefined} aria-labelledby="traceTitle">
+      <div className="trace-resize-handle" role="separator" aria-label="调整 Trace 面板高度" aria-orientation="horizontal" aria-valuemin={minimumHeight} aria-valuenow={Math.round(traceHeight)} tabIndex={expanded ? 0 : -1} title="拖动调整高度 · 双击恢复默认" onPointerDown={startTraceResize} onPointerMove={moveTraceResize} onPointerUp={stopTraceResize} onPointerCancel={stopTraceResize} onLostPointerCapture={stopTraceResize} onKeyDown={resizeTraceWithKeyboard} onDoubleClick={() => setClampedHeight(defaultHeight, true)} />
       <div className="trace-status-bar">
-        <div className="trace-title"><strong id="traceTitle">Trace</strong><span className="panel-summary">{ordered.length} traces</span></div>
+        <div className="trace-title"><strong id="traceTitle">Trace</strong><span className="panel-summary">{allTraces.length} traces</span></div>
         <div className="trace-latest">
           {!latest ? <span className="trace-latest-empty">暂无 Trace</span> : <><span>{latest.beginTime ? new Date(latest.beginTime / 1000000).toLocaleTimeString() : '-'}</span><span className="trace-latest-event">{latest.event || '-'}</span><span>{latest.fromState || '-'} → {latest.finalState || '-'}</span><span className={`trace-latest-result ${latest.success ? 'ok' : 'fail'}`} title={latest.error || ''}>{latest.success ? 'success' : 'failed'}</span><span>{formatNanos(latest.duration)}</span></>}
         </div>
@@ -173,15 +376,70 @@ function TracePanel({ traces }) {
           <svg className="trace-expand-icon" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6" /></svg><svg className="trace-collapse-icon" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg>
         </button>
       </div>
-      <div className="trace-history"><table><thead><tr><th>时间</th><th>事件</th><th>状态流转</th><th>结果</th><th>耗时</th><th>FSM 数据</th><th>错误</th></tr></thead><tbody>{ordered.map((trace, index) => <tr key={trace.transitionId || index}><td>{trace.beginTime ? new Date(trace.beginTime / 1000000).toLocaleTimeString() : "-"}</td><td>{trace.event}</td><td>{trace.fromState} → {trace.finalState}</td><td className={trace.success ? "ok" : "fail"}>{trace.success ? "success" : "failed"}</td><td>{formatNanos(trace.duration)}</td><td><TraceMetadata trace={trace} /></td><td className={trace.error ? "trace-error" : ""}>{trace.error || "-"}</td></tr>)}</tbody></table></div>
+      <div className="trace-history">
+        <div className="trace-toolbar">
+          <input className="trace-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索事件、状态、结果、错误或时间" aria-label="搜索 Trace" />
+          <label><span>开始</span><input type="datetime-local" step="1" value={startTime} max={endTime || undefined} onChange={(event) => setStartTime(event.target.value)} /></label>
+          <label><span>结束</span><input type="datetime-local" step="1" value={endTime} min={startTime || undefined} onChange={(event) => setEndTime(event.target.value)} /></label>
+          <label><span>排序</span><select value={sortBy} onChange={(event) => setSortBy(event.target.value)}><option value="newest">最新优先</option><option value="oldest">最早优先</option><option value="duration-desc">耗时从长到短</option><option value="duration-asc">耗时从短到长</option></select></label>
+          <span className="trace-filter-count">{visible.length} / {allTraces.length}</span>
+          <button className="trace-clear" type="button" disabled={!filtered} onClick={clearFilters}>清空</button>
+        </div>
+        <div className="trace-table-wrap">
+          <table><thead><tr><th>时间</th><th>事件</th><th>状态流转</th><th>结果</th><th>耗时</th><th>错误</th></tr></thead><tbody>
+            {visible.map((trace, index) => {
+              const traceId = trace.replayRecordId || trace.transitionId || String(index)
+              return <tr className={`trace-row${selectedId === traceId ? ' selected' : ''}${onSelect ? ' selectable' : ''}`} key={traceId} tabIndex={0} title="右键查看 FSM 数据" aria-current={selectedId === traceId ? 'true' : undefined} onClick={() => onSelect?.(trace)} onKeyDown={(event) => { if (onSelect && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onSelect(trace) } }} onContextMenu={(event) => openTraceMenu(event, trace)}><td>{formatTraceTime(trace)}</td><td>{trace.event}</td><td>{trace.fromState} → {trace.finalState}</td><td className={trace.success ? "ok" : "fail"}>{trace.success ? "success" : "failed"}</td><td>{formatNanos(trace.duration)}</td><td className={trace.error ? "trace-error" : ""}>{trace.error || "-"}</td></tr>
+            })}
+            {!visible.length && <tr><td className="trace-empty" colSpan="6">没有匹配的 Trace</td></tr>}
+          </tbody></table>
+        </div>
+      </div>
+      <TraceContextMenu menu={contextMenu} onView={viewMetadata} />
+      <TraceMetadataDialog trace={metadataTrace} onClose={() => setMetadataTrace(null)} />
     </section>
+  )
+}
+
+function ReplaySidebar({ sources, machinesBySource, selectedSource, selectedFSM, onSelect, onRefresh, collapsed, onToggle }) {
+  const [query, setQuery] = useState('')
+  const visibleSources = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase()
+    if (!needle) return sources.map((source) => ({ source, machines: machinesBySource[source.id] || [] }))
+    return sources.map((source) => {
+      const machines = machinesBySource[source.id] || []
+      const sourceMatch = [source.id, source.name, source.driver, source.location].some((value) => String(value || '').toLocaleLowerCase().includes(needle))
+      const visibleMachines = sourceMatch ? machines : machines.filter((item) => [item.id, item.name, item.displayName, item.path, item.currentState].some((value) => String(value || '').toLocaleLowerCase().includes(needle)))
+      return { source, machines: visibleMachines }
+    }).filter((item) => item.machines.length || [item.source.id, item.source.name, item.source.driver, item.source.location].some((value) => String(value || '').toLocaleLowerCase().includes(needle)))
+  }, [machinesBySource, query, sources])
+  const machineCount = Object.values(machinesBySource).reduce((total, machines) => total + machines.length, 0)
+  return (
+    <aside className="left-sidebar replay-sidebar">
+      <div className="aside-heading">
+        <span className="aside-title">Replay Sources</span><span className="count-pill">{sources.length} / {machineCount}</span>
+        <button className="sidebar-tool" type="button" aria-label="刷新 Replay 数据源" title="刷新" onClick={onRefresh}><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 8.2A7 7 0 0 1 18.8 9M17.9 15.8A7 7 0 0 1 5.2 15"/></svg></button>
+        <button className="sidebar-toggle" type="button" aria-label={`${collapsed ? '展开' : '折叠'}左侧栏`} title={`${collapsed ? '展开' : '折叠'}左侧栏`} aria-expanded={!collapsed} onClick={onToggle}><svg className="left-sidebar-open-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><rect className="sidebar-pane-fill" x="2.5" y="3.5" width="3.5" height="9" rx=".75"/><path d="M6.5 3v10"/></svg><svg className="left-sidebar-closed-icon" viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6.5 3v10"/></svg></button>
+      </div>
+      <div className="tree-toolbar"><input className="tree-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索数据源、FSM 或状态" aria-label="搜索 Replay 数据源和 FSM" /></div>
+      <div className="fsm-list">
+        {visibleSources.map(({ source, machines }) => <details className="folder-node replay-source-node" key={source.id} defaultOpen={stored(`replay-source:${source.id}`, 'open') !== 'closed'} onToggle={(event) => remember(`replay-source:${source.id}`, event.currentTarget.open ? 'open' : 'closed')}>
+          <summary title={source.location || source.name}><span className="folder-chevron">›</span><span className={`source-status${source.lastError ? ' error' : ''}`} /><span>{source.name || source.id}</span><span className="source-driver">{source.driver}</span><span className="folder-count">{machines.length}</span></summary>
+          <div className="folder-content">
+            {machines.map((item) => <MachineButton key={item.id} item={item} selected={selectedSource === source.id && selectedFSM === item.id} onSelect={(id) => onSelect(source.id, id)} />)}
+            {!machines.length && <div className="source-empty">未发现 FSM</div>}
+          </div>
+        </details>)}
+        {!visibleSources.length && <div className="available-empty">没有匹配的数据源或 FSM</div>}
+      </div>
+    </aside>
   )
 }
 
 function ReplayPage({ sidebarCollapsed, onSidebarToggle, payloadOpen, onPayloadToggle }) {
   const [sources, setSources] = useState([])
   const [source, setSource] = useState('')
-  const [allRecords, setAllRecords] = useState([])
+  const [recordsBySource, setRecordsBySource] = useState({})
   const [selectedFSM, setSelectedFSM] = useState('')
   const [selected, setSelected] = useState(null)
   const [playing, setPlaying] = useState(false)
@@ -189,37 +447,40 @@ function ReplayPage({ sidebarCollapsed, onSidebarToggle, payloadOpen, onPayloadT
   const load = useCallback(async () => {
     const values = await api.replaySources()
     setSources(values)
-    const nextSource = values.some((item) => item.id === source) ? source : (values[0]?.id || '')
-    if (nextSource !== source) setSource(nextSource)
-    setAllRecords(nextSource ? await api.replayRecords(nextSource) : [])
-  }, [source])
+    const entries = await Promise.all(values.map(async (item) => {
+      try { return [item.id, await api.replayRecords(item.id)] }
+      catch (error) { console.error(error); return [item.id, []] }
+    }))
+    setRecordsBySource(Object.fromEntries(entries))
+  }, [])
   useEffect(() => { setPlaying(false); setSelected(null); load().catch(console.error) }, [load])
 
-  const machines = useMemo(() => {
+  const machinesBySource = useMemo(() => Object.fromEntries(sources.map((sourceItem) => {
     const grouped = new Map()
-    allRecords.forEach((record) => {
+    ;(recordsBySource[sourceItem.id] || []).forEach((record) => {
       if (!record.fsmId) return
       const current = grouped.get(record.fsmId)
-      if (!current) {
-        grouped.set(record.fsmId, {
-          id: record.fsmId,
-          name: record.fsmId,
-          displayName: record.displayName || record.fsmId,
-          path: record.path || '',
-          currentState: record.state || '',
-          mode: 'replay',
-          recordCount: 1,
-        })
-      } else {
-        current.recordCount++
-      }
+      if (current) { current.recordCount++; return }
+      grouped.set(record.fsmId, { id: record.fsmId, name: record.fsmId, displayName: record.displayName || record.fsmId, path: record.path || '', currentState: record.state || '', mode: 'replay', recordCount: 1 })
     })
-    return [...grouped.values()].sort(compareMachines)
-  }, [allRecords])
+    return [sourceItem.id, [...grouped.values()].sort(compareMachines)]
+  })), [recordsBySource, sources])
   useEffect(() => {
-    if (!machines.some((item) => item.id === selectedFSM)) setSelectedFSM(machines[0]?.id || '')
-  }, [machines, selectedFSM])
-  const records = useMemo(() => allRecords.filter((item) => item.fsmId === selectedFSM), [allRecords, selectedFSM])
+    if ((machinesBySource[source] || []).some((item) => item.id === selectedFSM)) return
+    const nextSource = sources.find((item) => (machinesBySource[item.id] || []).length) || sources[0]
+    setSource(nextSource?.id || '')
+    setSelectedFSM(nextSource ? machinesBySource[nextSource.id]?.[0]?.id || '' : '')
+  }, [machinesBySource, selectedFSM, source, sources])
+  const records = useMemo(() => (recordsBySource[source] || []).filter((item) => item.fsmId === selectedFSM), [recordsBySource, selectedFSM, source])
+  const traces = useMemo(() => records.map((record) => ({
+    ...(record.trace || {}),
+    replayRecordId: record.id,
+    transitionId: record.trace?.transitionId || record.transitionId || record.id,
+    event: record.trace?.event || record.event || '',
+    finalState: record.trace?.finalState || record.state || '',
+    success: record.trace?.transitionId || record.trace?.event ? record.trace.success : record.success,
+    beginTime: record.trace?.beginTime || new Date(record.recordedAt).getTime() * 1000000,
+  })), [records])
   useEffect(() => {
     let cancelled = false
     if (!source || !selectedFSM || !records.length) { setSelected(null); return () => { cancelled = true } }
@@ -248,23 +509,95 @@ function ReplayPage({ sidebarCollapsed, onSidebarToggle, payloadOpen, onPayloadT
     setSelected(null)
     await load()
   }
+  const selectMachine = (sourceID, fsmID) => { setPlaying(false); setSelected(null); setSource(sourceID); setSelectedFSM(fsmID) }
+  const selectTrace = (trace) => {
+    const record = records.find((item) => item.id === trace.replayRecordId)
+    if (record) chooseRecord(record).catch(console.error)
+  }
 
   return <>
-    <Sidebar fsms={machines} selected={selectedFSM} onSelect={(id) => { setPlaying(false); setSelected(null); setSelectedFSM(id) }} collapsed={sidebarCollapsed} onToggle={onSidebarToggle} title="Replay FSM" countLabel={`${machines.length} stored`} searchPlaceholder="搜索已存储 FSM、状态或路径" emptyLabel="当前数据源没有 FSM" />
+    <ReplaySidebar sources={sources} machinesBySource={machinesBySource} selectedSource={source} selectedFSM={selectedFSM} onSelect={selectMachine} onRefresh={() => load().catch(console.error)} collapsed={sidebarCollapsed} onToggle={onSidebarToggle} />
     <main className="replay-page">
-      <div className="replay-toolbar"><select value={source} onChange={(event) => { setSelectedFSM(''); setSelected(null); setSource(event.target.value) }}>{sources.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.driver}</option>)}</select><button type="button" onClick={() => load().catch(console.error)}>刷新</button><span>{records.length} records · {machines.find((item) => item.id === selectedFSM)?.displayName || 'no FSM'}</span></div>
-      <div className="replay-layout"><aside className="replay-list">{records.map((item) => <button key={item.id} className={`replay-record${selected?.id === item.id ? ' active' : ''}`} type="button" onClick={() => chooseRecord(item).catch(console.error)}><strong>{item.displayName || item.fsmId}</strong><span>{item.event || 'snapshot'} · {item.state}</span><time>{formatTime(item.recordedAt)}</time></button>)}</aside><section className="replay-stage">{selected ? <><div className="replay-controls"><button type="button" onClick={() => setPlaying((value) => !value)}>{playing ? '暂停' : '播放'}</button><span>{selected.snapshot.previousState || '-'} -- {selected.snapshot.previousEvent || '-'} → {selected.snapshot.currentState}</span><button className="replay-delete" type="button" onClick={removeSelected}>删除</button></div><div className="replay-graph"><StateGraph item={selected.snapshot}/></div></> : <div className="replay-empty">当前 FSM 暂无可回放记录</div>}</section></div>
+      <section className="replay-stage">{selected ? <><div className="replay-controls"><button type="button" disabled={records.length < 2} onClick={() => setPlaying((value) => !value)}>{playing ? '暂停' : '播放'}</button><span>{selected.snapshot.previousState || '-'} -- {selected.snapshot.previousEvent || '-'} → {selected.snapshot.currentState}</span><button type="button" onClick={() => load().catch(console.error)}>刷新</button><button className="replay-delete" type="button" onClick={removeSelected}>删除</button></div><div className="replay-graph"><StateGraph item={selected.snapshot}/></div></> : <div className="replay-empty">请选择数据源中的 FSM</div>}</section>
+      <TracePanel traces={traces} selectedId={selected?.id || ''} onSelect={selectTrace} />
     </main>
     <RightSidebar item={selected?.snapshot} payloadOpen={payloadOpen} onPayloadToggle={onPayloadToggle} />
   </>
 }
 
 function ReplaySourceSettings() {
-  const [sources, setSources] = useState([]), [driver, setDriver] = useState("jsonl")
+  const [sources, setSources] = useState([])
+  const [driver, setDriver] = useState('jsonl')
+  const [jsonlMode, setJSONLMode] = useState('local')
+  const [directory, setDirectory] = useState('')
+  const [directoryBrowser, setDirectoryBrowser] = useState(null)
+  const [status, setStatus] = useState({ message: '', error: false })
+  const [submitting, setSubmitting] = useState(false)
   const reload = useCallback(() => api.replaySources().then(setSources), [])
   useEffect(() => { reload().catch(console.error) }, [reload])
-  const submit = async (event) => { event.preventDefault(); const data = new FormData(event.currentTarget); await api.createReplaySource({ id:data.get("id"), name:data.get("name"), driver, jsonl:{directory:data.get("directory")}, mysql:{dsn:data.get("dsn")}, redis:{address:data.get("address"),password:data.get("password"),db:Number(data.get("db")||0)} }); event.currentTarget.reset(); await reload() }
-  return <><div className="settings-section-head replay-source-head"><h2>数据源发现</h2><p>连接 MySQL、Redis 或 JSONL 目录，在 Replay 版面管理和回放。</p></div><section className="settings-block"><form className="discovery-form" onSubmit={submit}><div className="discovery-field"><label>数据源 ID</label><input name="id" required/></div><div className="discovery-field"><label>显示名称</label><input name="name"/></div><div className="discovery-field"><label>类型</label><select value={driver} onChange={(event)=>setDriver(event.target.value)}><option value="jsonl">JSONL</option><option value="mysql">MySQL</option><option value="redis">Redis</option></select></div>{driver==="jsonl"&&<div className="discovery-field"><label>JSONL 目录</label><input name="directory" required/></div>}{driver==="mysql"&&<div className="discovery-field wide"><label>MySQL DSN</label><input name="dsn" required/></div>}{driver==="redis"&&<><div className="discovery-field"><label>Redis 地址</label><input name="address" required/></div><div className="discovery-field"><label>DB</label><input name="db" type="number" defaultValue="0"/></div><div className="discovery-field wide"><label>密码</label><input name="password" type="password"/></div></>}<div className="discovery-form-footer"><button className="discovery-submit">添加数据源</button></div></form></section><section className="settings-block"><div className="discovery-list">{sources.map((item)=><article className="discovery-item" key={item.id}><div className="discovery-item-head"><span className={"discovery-status-dot"+(item.lastError?" error":"")}/><strong>{item.name}</strong><span className="discovery-item-count">{item.driver}</span></div><div className="discovery-item-meta">{item.location}</div>{!item.primary&&<div className="discovery-actions"><button className="discovery-action danger" type="button" onClick={async()=>{await api.deleteReplaySource(item.id);await reload()}}>删除</button></div>}</article>)}</div></section></>
+  const browseDirectory = async (path = directory) => {
+    try { setDirectoryBrowser(await api.replayDirectories(path)); setStatus({ message: '', error: false }) }
+    catch (error) { setStatus({ message: error.message, error: true }) }
+  }
+  const openChildDirectory = (name) => {
+    const separator = directoryBrowser.path.includes('\\') ? '\\' : '/'
+    browseDirectory(`${directoryBrowser.path.replace(/[\\/]$/, '')}${separator}${name}`)
+  }
+  const submit = async (event) => {
+    event.preventDefault()
+    setSubmitting(true)
+    setStatus({ message: '正在连接数据源…', error: false })
+    const form = event.currentTarget
+    const data = new FormData(form)
+    try {
+      await api.createReplaySource({
+        id: String(data.get('id') || '').trim(), name: String(data.get('name') || '').trim(), driver,
+        jsonl: driver === 'jsonl' ? {
+          directory: directory.trim(), filename: String(data.get('filename') || '').trim(),
+          ssh: jsonlMode === 'ssh' ? {
+            address: String(data.get('sshAddress') || '').trim(), username: String(data.get('sshUsername') || '').trim(), password: String(data.get('sshPassword') || ''),
+            privateKeyFile: String(data.get('privateKeyFile') || '').trim(), privateKeyPassphrase: String(data.get('privateKeyPassphrase') || ''), knownHostsFile: String(data.get('knownHostsFile') || '').trim(),
+            insecureIgnoreHostKey: data.get('insecureIgnoreHostKey') === 'on', timeoutSeconds: Number(data.get('timeoutSeconds') || 10),
+          } : undefined,
+        } : undefined,
+        mysql: driver === 'mysql' ? { dsn: String(data.get('dsn') || '').trim(), table: String(data.get('table') || '').trim() } : undefined,
+        redis: driver === 'redis' ? { address: String(data.get('address') || '').trim(), password: String(data.get('password') || ''), db: Number(data.get('db') || 0), keyPrefix: String(data.get('keyPrefix') || '').trim() } : undefined,
+      })
+      form.reset(); setDirectory(''); setDirectoryBrowser(null)
+      setStatus({ message: '数据源已连接', error: false }); await reload()
+    } catch (error) { setStatus({ message: error.message, error: true }) }
+    finally { setSubmitting(false) }
+  }
+  const remove = async (item) => {
+    if (!window.confirm(`删除数据源 ${item.name || item.id}？`)) return
+    try { await api.deleteReplaySource(item.id); setStatus({ message: '数据源已删除', error: false }); await reload() }
+    catch (error) { setStatus({ message: error.message, error: true }) }
+  }
+  return <>
+    <div className="settings-section-head"><h2>数据源发现</h2><p>连接 JSONL、MySQL 或 Redis 数据源，在 Replay 版面统一管理 FSM 记录。</p></div>
+    <section className="settings-block source-config-block">
+      <div className="settings-block-head"><div><strong>添加数据源</strong><span>选择数据源类型后填写对应的连接配置。</span></div><span className="settings-block-badge">STORE</span></div>
+      <nav className="source-type-nav" aria-label="数据源类型" role="tablist">
+        {[['jsonl', 'JSONL', '本地或 SSH 目录'], ['mysql', 'MySQL', '关系数据库'], ['redis', 'Redis', '键值存储']].map(([value, label, hint]) => <button key={value} className={driver === value ? 'active' : ''} type="button" role="tab" aria-selected={driver === value} onClick={() => { setDriver(value); setDirectoryBrowser(null); setStatus({ message: '', error: false }) }}><strong>{label}</strong><span>{hint}</span></button>)}
+      </nav>
+      <form className="discovery-form source-config-form" onSubmit={submit}>
+        <div className="discovery-field"><label htmlFor="sourceId">数据源 ID</label><input id="sourceId" name="id" required placeholder={`${driver}-archive`} /></div>
+        <div className="discovery-field"><label htmlFor="sourceName">显示名称</label><input id="sourceName" name="name" placeholder={`${driver.toUpperCase()} Archive`} /></div>
+        {driver === 'jsonl' && <>
+          <div className="source-location-nav wide" role="tablist" aria-label="JSONL 目录位置"><button className={jsonlMode === 'local' ? 'active' : ''} type="button" role="tab" aria-selected={jsonlMode === 'local'} onClick={() => { setJSONLMode('local'); setDirectoryBrowser(null) }}>本地目录</button><button className={jsonlMode === 'ssh' ? 'active' : ''} type="button" role="tab" aria-selected={jsonlMode === 'ssh'} onClick={() => { setJSONLMode('ssh'); setDirectoryBrowser(null) }}>SSH / SFTP</button></div>
+          {jsonlMode === 'ssh' && <><div className="discovery-field"><label htmlFor="sshAddress">SSH 地址</label><input id="sshAddress" name="sshAddress" required placeholder="server.example.com:22" /></div><div className="discovery-field"><label htmlFor="sshUsername">用户名</label><input id="sshUsername" name="sshUsername" required placeholder="fsm-reader" /></div><div className="discovery-field"><label htmlFor="sshPassword">密码</label><input id="sshPassword" name="sshPassword" type="password" autoComplete="new-password" /></div><div className="discovery-field"><label htmlFor="privateKeyFile">私钥文件</label><input id="privateKeyFile" name="privateKeyFile" placeholder="~/.ssh/id_ed25519" /></div><div className="discovery-field"><label htmlFor="privateKeyPassphrase">私钥口令</label><input id="privateKeyPassphrase" name="privateKeyPassphrase" type="password" /></div><div className="discovery-field"><label htmlFor="knownHostsFile">Known Hosts</label><input id="knownHostsFile" name="knownHostsFile" placeholder="~/.ssh/known_hosts" /></div></>}
+          <div className="discovery-field wide"><label htmlFor="jsonlDirectory">{jsonlMode === 'local' ? '服务端本地目录' : '远程 JSONL 目录'}</label><div className="directory-input"><input id="jsonlDirectory" value={directory} onChange={(event) => setDirectory(event.target.value)} required placeholder={jsonlMode === 'local' ? '/var/lib/fsm' : '/srv/fsm/data'} />{jsonlMode === 'local' && <button type="button" onClick={() => browseDirectory()}>选择目录</button>}</div></div>
+          <div className="discovery-field"><label htmlFor="jsonlFilename">写入文件名</label><input id="jsonlFilename" name="filename" placeholder="fsm.jsonl" /></div>
+          {jsonlMode === 'ssh' && <><div className="discovery-field"><label htmlFor="sshTimeout">连接超时（秒）</label><input id="sshTimeout" name="timeoutSeconds" type="number" min="1" defaultValue="10" /></div><label className="source-check wide"><input name="insecureIgnoreHostKey" type="checkbox"/><span>跳过 SSH Host Key 校验（仅限受信网络）</span></label></>}
+          {jsonlMode === 'local' && directoryBrowser && <div className="directory-browser wide"><div className="directory-browser-head"><strong title={directoryBrowser.path}>{directoryBrowser.path}</strong><div>{directoryBrowser.parent && <button type="button" onClick={() => browseDirectory(directoryBrowser.parent)}>上一级</button>}<button type="button" onClick={() => { setDirectory(directoryBrowser.path); setDirectoryBrowser(null) }}>选择当前目录</button><button type="button" onClick={() => setDirectoryBrowser(null)}>关闭</button></div></div><div className="directory-browser-list">{directoryBrowser.directories.map((name) => <button key={name} type="button" onClick={() => openChildDirectory(name)}><span>□</span>{name}</button>)}{!directoryBrowser.directories.length && <span>当前目录没有子目录</span>}</div></div>}
+        </>}
+        {driver === 'mysql' && <><div className="discovery-field wide"><label htmlFor="mysqlDSN">MySQL DSN</label><input id="mysqlDSN" name="dsn" required placeholder="user:password@tcp(127.0.0.1:3306)/fsm" /></div><div className="discovery-field"><label htmlFor="mysqlTable">数据表</label><input id="mysqlTable" name="table" placeholder="fsm_records" /></div></>}
+        {driver === 'redis' && <><div className="discovery-field"><label htmlFor="redisAddress">Redis 地址</label><input id="redisAddress" name="address" required placeholder="127.0.0.1:6379" /></div><div className="discovery-field"><label htmlFor="redisDB">DB</label><input id="redisDB" name="db" type="number" min="0" defaultValue="0" /></div><div className="discovery-field"><label htmlFor="redisPassword">密码</label><input id="redisPassword" name="password" type="password" /></div><div className="discovery-field"><label htmlFor="redisPrefix">Key Prefix</label><input id="redisPrefix" name="keyPrefix" placeholder="fsm:records" /></div></>}
+        <div className="discovery-form-footer"><button className="discovery-submit" type="submit" disabled={submitting}>{submitting ? '正在连接…' : '添加数据源'}</button><span className={`discovery-form-status${status.error ? ' error' : ''}`} role="status">{status.message}</span></div>
+      </form>
+    </section>
+    <section className="settings-block"><div className="settings-block-head"><div><strong>已发现的数据源</strong><span>数据源中的 FSM 将显示在 Replay 左侧边栏。</span></div></div><div className="discovery-list">{!sources.length ? <div className="discovery-empty">尚未配置数据源</div> : sources.map((item) => <article className="discovery-item" key={item.id}><div className="discovery-item-head"><span className={`discovery-status-dot${item.lastError ? ' error' : ''}`}/><strong>{item.name || item.id}</strong><span className="discovery-item-count">{item.driver}</span></div><div className="discovery-item-meta">{item.location}</div>{item.lastError && <div className="discovery-item-error">{item.lastError}</div>}{!item.primary && <div className="discovery-actions"><button className="discovery-action danger" type="button" onClick={() => remove(item)}>删除</button></div>}</article>)}</div></section>
+  </>
 }
 
 function DiscoverySettings({ open, onClose, discoveries, reloadDiscoveries, reloadFSMs }) {

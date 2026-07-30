@@ -2,12 +2,41 @@ package visualization
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/swkings/fsm/config"
 	"github.com/swkings/fsm/store"
 )
+
+func TestReplayDirectoryBrowserListsDirectories(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.Mkdir(filepath.Join(directory, "archive"), 0o755); err != nil {
+		t.Fatalf("create directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "ignored.jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/replay/directories?path="+url.QueryEscape(directory), nil)
+	new(Server).handleReplayDirectories(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("browse directory: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var view replayDirectoryView
+	if err := json.NewDecoder(recorder.Body).Decode(&view); err != nil {
+		t.Fatalf("decode directory view: %v", err)
+	}
+	if view.Path != directory || len(view.Directories) != 1 || view.Directories[0] != "archive" {
+		t.Fatalf("unexpected directory view: %+v", view)
+	}
+}
 
 func TestReplayReadsFSMStoreWithoutOwningPersistence(t *testing.T) {
 	backend, err := store.New(config.Store{JSONL: config.JSONL{Directory: t.TempDir(), Filename: "fsm.jsonl"}})
@@ -34,6 +63,9 @@ func TestReplayReadsFSMStoreWithoutOwningPersistence(t *testing.T) {
 	records, err := hub.list(context.Background(), "primary", "player-1", 10)
 	if err != nil || len(records) != 1 {
 		t.Fatalf("list replay records: records=%+v err=%v", records, err)
+	}
+	if records[0].Trace.Event != "RUN" || records[0].Trace.FromState != "IDLE" || records[0].Trace.FinalState != "RUN" {
+		t.Fatalf("list replay trace: %+v", records[0].Trace)
 	}
 	replay, err := hub.get(context.Background(), "primary", record.ID)
 	if err != nil {
