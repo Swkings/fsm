@@ -25,6 +25,7 @@ func newHTTPHandler(server *Server) http.Handler {
 	mux.HandleFunc("/api/replay/sources", server.handleReplaySources)
 	mux.HandleFunc("/api/replay/sources/", server.handleReplaySourceDetail)
 	mux.HandleFunc("/api/replay/directories", server.handleReplayDirectories)
+	mux.HandleFunc("/api/replay/ssh/directories", server.handleReplaySSHDirectories)
 	mux.HandleFunc("/api/replay/records", server.handleReplayRecords)
 	mux.HandleFunc("/api/replay/records/", server.handleReplayRecordDetail)
 	return mux

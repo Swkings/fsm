@@ -156,7 +156,7 @@ func TestGeneratorsProduceStableValidHandlerCode(t *testing.T) {
 		t.Fatalf("generated factory missing description:\n%s", factory)
 	}
 	if !strings.Contains(factoryText, "func NewFSMDoor(payload *types.Payload) *fsm.FSM[*types.Payload]") ||
-		!strings.Contains(factoryText, "fsm.NewFSM[*types.Payload](types.FSMNameDoor, types.StateEnum.Idle, payload)") {
+		!strings.Contains(factoryText, "fsm.NewFSM(types.FSMNameDoor, types.StateEnum.Idle, payload)") {
 		t.Fatalf("generated factory does not require a payload pointer:\n%s", factory)
 	}
 	if !strings.Contains(factoryText, "types.StateEnum.Idle") ||

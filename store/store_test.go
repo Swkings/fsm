@@ -22,6 +22,15 @@ func TestJSONLStoreLifecycle(t *testing.T) {
 	testStoreLifecycle(t, backend)
 }
 
+func TestBrowseSSHJSONLRequiresConnectionConfiguration(t *testing.T) {
+	if _, err := BrowseSSHJSONL(context.Background(), config.JSONL{}); err == nil || !strings.Contains(err.Error(), "configuration is required") {
+		t.Fatalf("missing SSH configuration: %v", err)
+	}
+	if _, err := BrowseSSHJSONL(context.Background(), config.JSONL{SSH: &config.SSH{}}); err == nil || !strings.Contains(err.Error(), "address is required") {
+		t.Fatalf("missing SSH address: %v", err)
+	}
+}
+
 func TestMySQLStoreLifecycle(t *testing.T) {
 	dsn, configured := os.LookupEnv("FSM_TEST_MYSQL_DSN")
 	if !configured {

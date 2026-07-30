@@ -592,6 +592,7 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
 .directory-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
 .directory-input button, .directory-browser button { min-height: 34px; padding: 0 11px; border: 1px solid var(--hairline); border-radius: 7px; background: var(--surface); color: var(--ink); font-size: 9px; cursor: pointer; }
 .directory-input button:hover, .directory-browser button:hover { border-color: var(--primary); color: var(--primary); }
+.directory-input button:disabled, .directory-browser button:disabled { cursor: wait; opacity: .55; }
 .source-check { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; color: var(--warning); font-size: 9px; }
 .source-check input { accent-color: var(--warning); }
 .directory-browser { grid-column: 1 / -1; min-width: 0; overflow: hidden; border: 1px solid var(--hairline); border-radius: 9px; background: var(--surface); }
@@ -602,6 +603,10 @@ th { position: sticky; top: 0; background: color-mix(in srgb, var(--surface-soft
 .directory-browser-list { max-height: 180px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; overflow: auto; padding: 7px; }
 .directory-browser-list button { min-width: 0; display: flex; align-items: center; gap: 7px; overflow: hidden; text-align: left; }
 .directory-browser-list button span { color: var(--primary); }
+.directory-browser-list button b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; font-weight: 550; }
+.directory-browser-list button small { margin-left: auto; color: var(--muted); font: 8px ui-monospace, monospace; white-space: nowrap; }
+.directory-browser-list button.file-entry { border-color: color-mix(in srgb, var(--success) 30%, var(--hairline)); }
+.directory-browser-list button.file-entry span { padding: 2px 4px; border-radius: 3px; background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); font: 650 7px ui-monospace, monospace; }
 .directory-browser-list > span { grid-column: 1 / -1; padding: 16px; color: var(--muted); text-align: center; font-size: 9px; }
 .discovery-form-footer { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding-top: 2px; }
 .discovery-submit, .discovery-action { min-height: 34px; padding: 0 13px; border: 1px solid color-mix(in srgb, var(--primary) 70%, var(--hairline)); border-radius: 8px; background: var(--primary); color: #fff; font-size: 11px; font-weight: 650; cursor: pointer; }

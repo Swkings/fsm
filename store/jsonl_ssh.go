@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,11 +32,51 @@ type sshJSONLStore struct {
 	mu        sync.Mutex
 }
 
+// RemoteDirectoryEntry describes a directory or JSONL file available through SFTP.
+type RemoteDirectoryEntry struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Directory bool   `json:"directory"`
+	Size      int64  `json:"size,omitempty"`
+}
+
+// RemoteDirectoryView is a browsable snapshot of one remote SFTP directory.
+type RemoteDirectoryView struct {
+	Path    string                 `json:"path"`
+	Parent  string                 `json:"parent,omitempty"`
+	Entries []RemoteDirectoryEntry `json:"entries"`
+}
+
+type sshSFTPConnection struct {
+	address  string
+	username string
+	ssh      *ssh.Client
+	client   *sftp.Client
+}
+
 func newSSHJSONL(cfg config.JSONL) (*sshJSONLStore, error) {
 	remote := cfg.SSH
 	if remote == nil {
 		return nil, errors.New("jsonl ssh configuration is required")
 	}
+	connection, err := dialJSONLSSH(*remote)
+	if err != nil {
+		return nil, err
+	}
+	directory := path.Clean(strings.TrimSpace(cfg.Directory))
+	if directory == "." || directory == "" {
+		_ = connection.close()
+		return nil, errors.New("jsonl ssh directory is required")
+	}
+	if err = connection.client.MkdirAll(directory); err != nil {
+		_ = connection.close()
+		return nil, fmt.Errorf("prepare jsonl ssh directory %s: %w", directory, err)
+	}
+	location := fmt.Sprintf("ssh://%s@%s/%s", connection.username, connection.address, strings.TrimPrefix(directory, "/"))
+	return &sshJSONLStore{directory: directory, filename: cfg.Filename, location: location, ssh: connection.ssh, client: connection.client}, nil
+}
+
+func dialJSONLSSH(remote config.SSH) (*sshSFTPConnection, error) {
 	address := strings.TrimSpace(remote.Address)
 	if address == "" {
 		return nil, errors.New("jsonl ssh address is required")
@@ -52,14 +93,14 @@ func newSSHJSONL(cfg config.JSONL) (*sshJSONLStore, error) {
 	if username == "" {
 		return nil, errors.New("jsonl ssh username is required")
 	}
-	auth, err := sshAuthMethods(*remote)
+	auth, err := sshAuthMethods(remote)
 	if err != nil {
 		return nil, err
 	}
 	if len(auth) == 0 {
 		return nil, errors.New("jsonl ssh password or private key file is required")
 	}
-	hostKey, err := sshHostKeyCallback(*remote)
+	hostKey, err := sshHostKeyCallback(remote)
 	if err != nil {
 		return nil, err
 	}
@@ -82,18 +123,66 @@ func newSSHJSONL(cfg config.JSONL) (*sshJSONLStore, error) {
 		_ = sshClient.Close()
 		return nil, fmt.Errorf("start jsonl sftp %s: %w", address, err)
 	}
-	directory := path.Clean(strings.TrimSpace(cfg.Directory))
-	if directory == "." || directory == "" {
-		_ = sftpClient.Close()
-		_ = sshClient.Close()
-		return nil, errors.New("jsonl ssh directory is required")
+	return &sshSFTPConnection{address: address, username: username, ssh: sshClient, client: sftpClient}, nil
+}
+
+func (c *sshSFTPConnection) close() error {
+	err := c.client.Close()
+	if sshErr := c.ssh.Close(); err == nil {
+		err = sshErr
 	}
-	if err = sftpClient.MkdirAll(directory); err != nil {
-		_ = sftpClient.Close()
-		_ = sshClient.Close()
-		return nil, fmt.Errorf("prepare jsonl ssh directory %s: %w", directory, err)
+	return err
+}
+
+// BrowseSSHJSONL connects to an SSH server and lists its child directories and
+// JSONL files without registering a replay source or creating remote paths.
+func BrowseSSHJSONL(ctx context.Context, cfg config.JSONL) (RemoteDirectoryView, error) {
+	if err := ctx.Err(); err != nil {
+		return RemoteDirectoryView{}, err
 	}
-	return &sshJSONLStore{directory: directory, filename: cfg.Filename, location: fmt.Sprintf("ssh://%s@%s%s", username, address, directory), ssh: sshClient, client: sftpClient}, nil
+	if cfg.SSH == nil {
+		return RemoteDirectoryView{}, errors.New("jsonl ssh configuration is required")
+	}
+	connection, err := dialJSONLSSH(*cfg.SSH)
+	if err != nil {
+		return RemoteDirectoryView{}, err
+	}
+	defer connection.close()
+
+	directory := strings.TrimSpace(cfg.Directory)
+	if directory == "" {
+		directory = "."
+	}
+	directory, err = connection.client.RealPath(directory)
+	if err != nil {
+		return RemoteDirectoryView{}, fmt.Errorf("resolve jsonl ssh directory %s: %w", cfg.Directory, err)
+	}
+	entries, err := connection.client.ReadDir(directory)
+	if err != nil {
+		return RemoteDirectoryView{}, fmt.Errorf("browse jsonl ssh directory %s: %w", directory, err)
+	}
+	view := RemoteDirectoryView{Path: directory, Entries: make([]RemoteDirectoryEntry, 0, len(entries))}
+	if parent := path.Dir(directory); parent != directory {
+		view.Parent = parent
+	}
+	for _, entry := range entries {
+		if err = ctx.Err(); err != nil {
+			return RemoteDirectoryView{}, err
+		}
+		if !entry.IsDir() && (entry.Mode()&os.ModeType != 0 || !strings.EqualFold(path.Ext(entry.Name()), ".jsonl")) {
+			continue
+		}
+		view.Entries = append(view.Entries, RemoteDirectoryEntry{
+			Name: entry.Name(), Path: path.Join(directory, entry.Name()), Directory: entry.IsDir(), Size: entry.Size(),
+		})
+	}
+	sort.Slice(view.Entries, func(i, j int) bool {
+		if view.Entries[i].Directory != view.Entries[j].Directory {
+			return view.Entries[i].Directory
+		}
+		return strings.ToLower(view.Entries[i].Name) < strings.ToLower(view.Entries[j].Name)
+	})
+	return view, nil
 }
 
 func sshAuthMethods(cfg config.SSH) ([]ssh.AuthMethod, error) {

@@ -1,6 +1,7 @@
 package visualization
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +37,15 @@ func TestReplayDirectoryBrowserListsDirectories(t *testing.T) {
 	}
 	if view.Path != directory || len(view.Directories) != 1 || view.Directories[0] != "archive" {
 		t.Fatalf("unexpected directory view: %+v", view)
+	}
+}
+
+func TestReplaySSHDirectoryBrowserValidatesConnection(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/replay/ssh/directories", bytes.NewBufferString(`{"directory":".","ssh":{}}`))
+	new(Server).handleReplaySSHDirectories(recorder, request)
+	if recorder.Code != http.StatusBadGateway || !strings.Contains(recorder.Body.String(), "address is required") {
+		t.Fatalf("validate SSH browser connection: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

@@ -526,11 +526,15 @@ function ReplayPage({ sidebarCollapsed, onSidebarToggle, payloadOpen, onPayloadT
 }
 
 function ReplaySourceSettings() {
+  const formRef = useRef(null)
   const [sources, setSources] = useState([])
   const [driver, setDriver] = useState('jsonl')
   const [jsonlMode, setJSONLMode] = useState('local')
   const [directory, setDirectory] = useState('')
+  const [filename, setFilename] = useState('')
   const [directoryBrowser, setDirectoryBrowser] = useState(null)
+  const [remoteBrowser, setRemoteBrowser] = useState(null)
+  const [sshBrowsing, setSSHBrowsing] = useState(false)
   const [status, setStatus] = useState({ message: '', error: false })
   const [submitting, setSubmitting] = useState(false)
   const reload = useCallback(() => api.replaySources().then(setSources), [])
@@ -543,6 +547,44 @@ function ReplaySourceSettings() {
     const separator = directoryBrowser.path.includes('\\') ? '\\' : '/'
     browseDirectory(`${directoryBrowser.path.replace(/[\\/]$/, '')}${separator}${name}`)
   }
+  const sshConfig = () => {
+    const data = new FormData(formRef.current)
+    return {
+      address: String(data.get('sshAddress') || '').trim(), username: String(data.get('sshUsername') || '').trim(), password: String(data.get('sshPassword') || ''),
+      privateKeyFile: String(data.get('privateKeyFile') || '').trim(), privateKeyPassphrase: String(data.get('privateKeyPassphrase') || ''), knownHostsFile: String(data.get('knownHostsFile') || '').trim(),
+      insecureIgnoreHostKey: data.get('insecureIgnoreHostKey') === 'on', timeoutSeconds: Number(data.get('timeoutSeconds') || 10),
+    }
+  }
+  const browseRemoteDirectory = async (path = directory) => {
+    const ssh = sshConfig()
+    if (!ssh.address || !ssh.username) {
+      setStatus({ message: '请先填写 SSH 地址和用户名', error: true })
+      return
+    }
+    if (!ssh.password && !ssh.privateKeyFile) {
+      setStatus({ message: '请先填写 SSH 密码或私钥文件', error: true })
+      return
+    }
+    setSSHBrowsing(true)
+    setStatus({ message: '正在连接 SSH…', error: false })
+    try {
+      const view = await api.replaySSHDirectories({ directory: String(path || '.').trim() || '.', ssh })
+      setRemoteBrowser(view)
+      setDirectory(view.path)
+      setStatus({ message: 'SSH 已连接，请选择远程目录或 JSONL 文件', error: false })
+    } catch (error) { setStatus({ message: error.message, error: true }) }
+    finally { setSSHBrowsing(false) }
+  }
+  const chooseRemoteEntry = (entry) => {
+    if (entry.directory) {
+      browseRemoteDirectory(entry.path)
+      return
+    }
+    setDirectory(remoteBrowser.path)
+    setFilename(entry.name)
+    setRemoteBrowser(null)
+    setStatus({ message: `已选择 ${entry.path}`, error: false })
+  }
   const submit = async (event) => {
     event.preventDefault()
     setSubmitting(true)
@@ -553,17 +595,13 @@ function ReplaySourceSettings() {
       await api.createReplaySource({
         id: String(data.get('id') || '').trim(), name: String(data.get('name') || '').trim(), driver,
         jsonl: driver === 'jsonl' ? {
-          directory: directory.trim(), filename: String(data.get('filename') || '').trim(),
-          ssh: jsonlMode === 'ssh' ? {
-            address: String(data.get('sshAddress') || '').trim(), username: String(data.get('sshUsername') || '').trim(), password: String(data.get('sshPassword') || ''),
-            privateKeyFile: String(data.get('privateKeyFile') || '').trim(), privateKeyPassphrase: String(data.get('privateKeyPassphrase') || ''), knownHostsFile: String(data.get('knownHostsFile') || '').trim(),
-            insecureIgnoreHostKey: data.get('insecureIgnoreHostKey') === 'on', timeoutSeconds: Number(data.get('timeoutSeconds') || 10),
-          } : undefined,
+          directory: directory.trim(), filename: filename.trim(),
+          ssh: jsonlMode === 'ssh' ? sshConfig() : undefined,
         } : undefined,
         mysql: driver === 'mysql' ? { dsn: String(data.get('dsn') || '').trim(), table: String(data.get('table') || '').trim() } : undefined,
         redis: driver === 'redis' ? { address: String(data.get('address') || '').trim(), password: String(data.get('password') || ''), db: Number(data.get('db') || 0), keyPrefix: String(data.get('keyPrefix') || '').trim() } : undefined,
       })
-      form.reset(); setDirectory(''); setDirectoryBrowser(null)
+      form.reset(); setDirectory(''); setFilename(''); setDirectoryBrowser(null); setRemoteBrowser(null)
       setStatus({ message: '数据源已连接', error: false }); await reload()
     } catch (error) { setStatus({ message: error.message, error: true }) }
     finally { setSubmitting(false) }
@@ -578,18 +616,19 @@ function ReplaySourceSettings() {
     <section className="settings-block source-config-block">
       <div className="settings-block-head"><div><strong>添加数据源</strong><span>选择数据源类型后填写对应的连接配置。</span></div><span className="settings-block-badge">STORE</span></div>
       <nav className="source-type-nav" aria-label="数据源类型" role="tablist">
-        {[['jsonl', 'JSONL', '本地或 SSH 目录'], ['mysql', 'MySQL', '关系数据库'], ['redis', 'Redis', '键值存储']].map(([value, label, hint]) => <button key={value} className={driver === value ? 'active' : ''} type="button" role="tab" aria-selected={driver === value} onClick={() => { setDriver(value); setDirectoryBrowser(null); setStatus({ message: '', error: false }) }}><strong>{label}</strong><span>{hint}</span></button>)}
+        {[['jsonl', 'JSONL', '本地或 SSH 目录'], ['mysql', 'MySQL', '关系数据库'], ['redis', 'Redis', '键值存储']].map(([value, label, hint]) => <button key={value} className={driver === value ? 'active' : ''} type="button" role="tab" aria-selected={driver === value} onClick={() => { setDriver(value); setDirectoryBrowser(null); setRemoteBrowser(null); setStatus({ message: '', error: false }) }}><strong>{label}</strong><span>{hint}</span></button>)}
       </nav>
-      <form className="discovery-form source-config-form" onSubmit={submit}>
+      <form ref={formRef} className="discovery-form source-config-form" onSubmit={submit}>
         <div className="discovery-field"><label htmlFor="sourceId">数据源 ID</label><input id="sourceId" name="id" required placeholder={`${driver}-archive`} /></div>
         <div className="discovery-field"><label htmlFor="sourceName">显示名称</label><input id="sourceName" name="name" placeholder={`${driver.toUpperCase()} Archive`} /></div>
         {driver === 'jsonl' && <>
-          <div className="source-location-nav wide" role="tablist" aria-label="JSONL 目录位置"><button className={jsonlMode === 'local' ? 'active' : ''} type="button" role="tab" aria-selected={jsonlMode === 'local'} onClick={() => { setJSONLMode('local'); setDirectoryBrowser(null) }}>本地目录</button><button className={jsonlMode === 'ssh' ? 'active' : ''} type="button" role="tab" aria-selected={jsonlMode === 'ssh'} onClick={() => { setJSONLMode('ssh'); setDirectoryBrowser(null) }}>SSH / SFTP</button></div>
+          <div className="source-location-nav wide" role="tablist" aria-label="JSONL 目录位置"><button className={jsonlMode === 'local' ? 'active' : ''} type="button" role="tab" aria-selected={jsonlMode === 'local'} onClick={() => { setJSONLMode('local'); setDirectoryBrowser(null); setRemoteBrowser(null) }}>本地目录</button><button className={jsonlMode === 'ssh' ? 'active' : ''} type="button" role="tab" aria-selected={jsonlMode === 'ssh'} onClick={() => { setJSONLMode('ssh'); setDirectoryBrowser(null); setRemoteBrowser(null) }}>SSH / SFTP</button></div>
           {jsonlMode === 'ssh' && <><div className="discovery-field"><label htmlFor="sshAddress">SSH 地址</label><input id="sshAddress" name="sshAddress" required placeholder="server.example.com:22" /></div><div className="discovery-field"><label htmlFor="sshUsername">用户名</label><input id="sshUsername" name="sshUsername" required placeholder="fsm-reader" /></div><div className="discovery-field"><label htmlFor="sshPassword">密码</label><input id="sshPassword" name="sshPassword" type="password" autoComplete="new-password" /></div><div className="discovery-field"><label htmlFor="privateKeyFile">私钥文件</label><input id="privateKeyFile" name="privateKeyFile" placeholder="~/.ssh/id_ed25519" /></div><div className="discovery-field"><label htmlFor="privateKeyPassphrase">私钥口令</label><input id="privateKeyPassphrase" name="privateKeyPassphrase" type="password" /></div><div className="discovery-field"><label htmlFor="knownHostsFile">Known Hosts</label><input id="knownHostsFile" name="knownHostsFile" placeholder="~/.ssh/known_hosts" /></div></>}
-          <div className="discovery-field wide"><label htmlFor="jsonlDirectory">{jsonlMode === 'local' ? '服务端本地目录' : '远程 JSONL 目录'}</label><div className="directory-input"><input id="jsonlDirectory" value={directory} onChange={(event) => setDirectory(event.target.value)} required placeholder={jsonlMode === 'local' ? '/var/lib/fsm' : '/srv/fsm/data'} />{jsonlMode === 'local' && <button type="button" onClick={() => browseDirectory()}>选择目录</button>}</div></div>
-          <div className="discovery-field"><label htmlFor="jsonlFilename">写入文件名</label><input id="jsonlFilename" name="filename" placeholder="fsm.jsonl" /></div>
+          <div className="discovery-field wide"><label htmlFor="jsonlDirectory">{jsonlMode === 'local' ? '服务端本地目录' : '远程 JSONL 目录'}</label><div className="directory-input"><input id="jsonlDirectory" value={directory} onChange={(event) => { setDirectory(event.target.value); setRemoteBrowser(null) }} required placeholder={jsonlMode === 'local' ? '/var/lib/fsm' : '/srv/fsm/data'} />{jsonlMode === 'local' ? <button type="button" onClick={() => browseDirectory()}>选择目录</button> : <button type="button" disabled={sshBrowsing} onClick={() => browseRemoteDirectory()}>{sshBrowsing ? '连接中…' : remoteBrowser ? '刷新远程目录' : '连接并选择'}</button>}</div></div>
+          <div className="discovery-field"><label htmlFor="jsonlFilename">写入文件名</label><input id="jsonlFilename" name="filename" value={filename} onChange={(event) => setFilename(event.target.value)} placeholder="fsm.jsonl" /></div>
           {jsonlMode === 'ssh' && <><div className="discovery-field"><label htmlFor="sshTimeout">连接超时（秒）</label><input id="sshTimeout" name="timeoutSeconds" type="number" min="1" defaultValue="10" /></div><label className="source-check wide"><input name="insecureIgnoreHostKey" type="checkbox"/><span>跳过 SSH Host Key 校验（仅限受信网络）</span></label></>}
           {jsonlMode === 'local' && directoryBrowser && <div className="directory-browser wide"><div className="directory-browser-head"><strong title={directoryBrowser.path}>{directoryBrowser.path}</strong><div>{directoryBrowser.parent && <button type="button" onClick={() => browseDirectory(directoryBrowser.parent)}>上一级</button>}<button type="button" onClick={() => { setDirectory(directoryBrowser.path); setDirectoryBrowser(null) }}>选择当前目录</button><button type="button" onClick={() => setDirectoryBrowser(null)}>关闭</button></div></div><div className="directory-browser-list">{directoryBrowser.directories.map((name) => <button key={name} type="button" onClick={() => openChildDirectory(name)}><span>□</span>{name}</button>)}{!directoryBrowser.directories.length && <span>当前目录没有子目录</span>}</div></div>}
+          {jsonlMode === 'ssh' && remoteBrowser && <div className="directory-browser remote-directory-browser wide"><div className="directory-browser-head"><strong title={remoteBrowser.path}>{remoteBrowser.path}</strong><div>{remoteBrowser.parent && <button type="button" disabled={sshBrowsing} onClick={() => browseRemoteDirectory(remoteBrowser.parent)}>上一级</button>}<button type="button" onClick={() => { setDirectory(remoteBrowser.path); setRemoteBrowser(null); setStatus({ message: `已选择目录 ${remoteBrowser.path}`, error: false }) }}>选择当前目录</button><button type="button" onClick={() => setRemoteBrowser(null)}>关闭</button></div></div><div className="directory-browser-list">{remoteBrowser.entries.map((entry) => <button className={entry.directory ? 'directory-entry' : 'file-entry'} key={entry.path} type="button" disabled={sshBrowsing} onClick={() => chooseRemoteEntry(entry)} title={entry.path}><span>{entry.directory ? '□' : 'JSONL'}</span><b>{entry.name}</b>{!entry.directory && <small>{entry.size} B</small>}</button>)}{!remoteBrowser.entries.length && <span>当前目录没有子目录或 JSONL 文件</span>}</div></div>}
         </>}
         {driver === 'mysql' && <><div className="discovery-field wide"><label htmlFor="mysqlDSN">MySQL DSN</label><input id="mysqlDSN" name="dsn" required placeholder="user:password@tcp(127.0.0.1:3306)/fsm" /></div><div className="discovery-field"><label htmlFor="mysqlTable">数据表</label><input id="mysqlTable" name="table" placeholder="fsm_records" /></div></>}
         {driver === 'redis' && <><div className="discovery-field"><label htmlFor="redisAddress">Redis 地址</label><input id="redisAddress" name="address" required placeholder="127.0.0.1:6379" /></div><div className="discovery-field"><label htmlFor="redisDB">DB</label><input id="redisDB" name="db" type="number" min="0" defaultValue="0" /></div><div className="discovery-field"><label htmlFor="redisPassword">密码</label><input id="redisPassword" name="password" type="password" /></div><div className="discovery-field"><label htmlFor="redisPrefix">Key Prefix</label><input id="redisPrefix" name="keyPrefix" placeholder="fsm:records" /></div></>}

@@ -20,6 +20,7 @@ export const api = {
   deleteDiscovery: (id) => request(`/api/discoveries/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   replaySources: () => request("/api/replay/sources"),
   replayDirectories: (path = "") => request("/api/replay/directories?path=" + encodeURIComponent(path)),
+  replaySSHDirectories: (payload) => request("/api/replay/ssh/directories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
   createReplaySource: (payload) => request("/api/replay/sources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
   deleteReplaySource: (id) => request("/api/replay/sources/" + encodeURIComponent(id), { method: "DELETE" }),
   replayRecords: (source = "primary", fsmId = "") => request("/api/replay/records?source=" + encodeURIComponent(source) + "&fsmId=" + encodeURIComponent(fsmId) + "&limit=500"),

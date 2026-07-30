@@ -8,6 +8,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/swkings/fsm/config"
+	"github.com/swkings/fsm/store"
 )
 
 type replayDirectoryView struct {
@@ -48,6 +51,24 @@ func (s *Server) handleReplayDirectories(w http.ResponseWriter, r *http.Request)
 		parent = ""
 	}
 	writeJSON(w, http.StatusOK, replayDirectoryView{Path: absolute, Parent: parent, Directories: directories})
+}
+
+func (s *Server) handleReplaySSHDirectories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	var cfg config.JSONL
+	if err := decodeJSONBody(w, r, &cfg); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	view, err := store.BrowseSSHJSONL(r.Context(), cfg)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) handleReplaySources(w http.ResponseWriter, r *http.Request) {
