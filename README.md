@@ -29,7 +29,46 @@ FSM:
       Directory: data/fsm
   Visualization:
     ServerAddress: 127.0.0.1:5005
+  MCP:
+    Enabled: true
+    ServerAddress: 127.0.0.1:5006
+    Endpoint: /mcp
 ```
+
+## 统一服务启动与注册
+
+`github.com/swkings/fsm/server` 包中的 `server.Server` 统一管理 FSM 注册，以及按配置启用的 Store、可视化 HTTP Server 和 MCP Server，并直接实现 go-zero 的 `service.Service`。将顶层 FSM 配置注入 Server 后，可以加入应用已有的 `ServiceGroup` 统一启动和停止：
+
+```go
+s := server.MustNewServer(appConfig.FSM)
+
+orderFSM := newOrderFSM(&OrderPayload{/* ... */})
+paymentFSM := newPaymentFSM(&PaymentPayload{/* ... */})
+
+// 两种写法等价；只会接入配置中启用的能力。
+if err := s.Register(orderFSM); err != nil {
+    return err
+}
+if err := paymentFSM.RegisterTo(s); err != nil {
+    return err
+}
+
+services := service.NewServiceGroup()
+services.Add(s)
+services.Start()
+```
+
+配置 Store 后，默认 key 根据 Payload `Category()`、FSM 名称与 `DisplayName()` 生成。需要明确的稳定业务键进行重启恢复时，使用 `s.RegisterWithKey("orders/order-1001", orderFSM)`；未配置 Store 时调用该方法会返回 `ErrStoreNotConfigured`。Server 停止时会解除所有注册并关闭其持有的 Store；FSM 实例本身仍由业务代码负责 `Close()`。
+
+`NewServer(config)` 返回 `(*Server, error)`；`MustNewServer(config)` 在已配置的子服务初始化失败时直接 panic，适合 go-zero 应用初始化阶段。`config.Config{}` 是合法配置，只管理 FSM 生命周期，不创建 `data/fsm`、不监听可视化或 MCP 端口：
+
+```go
+s := server.MustNewServer(config.Config{})
+_ = s.Register(machine)
+services.Add(s)
+```
+
+Store 仅在配置了 `Driver`、JSONL、MySQL 或 Redis 字段时创建；Visualization 仅在 `ServerAddress` 非空时监听；MCP 仅在 `Enabled: true` 或 `ServerAddress` 非空时启动。直接调用 `store.New(config.Store{})` 时仍保留默认 JSONL 行为。
 
 ## 使用模板生成代码
 
@@ -181,7 +220,7 @@ if err := machine.BindStore(ctx, backend, "orders/order-1001"); err != nil {
 }
 ```
 
-`BindStore` 使用稳定的业务 key 查询最近一次成功记录：存在记录时恢复 InstanceID、TransitionID、当前/上一状态、上一事件、描述及 Payload；不存在记录时保存初始检查点。绑定后每次事件结束都会同步保存 FSM 数据、转移定义以及进入/退出 FSM 的 Trace。`SetPayload` 或 `SetCurrentState` 等非事件修改后可调用 `machine.Save(ctx)` 创建显式检查点。Store 生命周期由调用方管理，一个 Store 可以供多个 FSM 共享。
+`BindStore` 使用稳定的业务 key 查询最近一次成功记录：存在记录时恢复 InstanceID、TransitionID、当前/上一状态、上一事件、描述及 Payload；不存在记录时保存初始检查点。绑定后每次事件结束都会同步保存 FSM 数据、转移定义以及进入/退出 FSM 的 Trace。`SetPayload` 或 `SetCurrentState` 等非事件修改后可调用 `machine.Save(ctx)` 创建显式检查点。直接调用 `BindStore` 时 Store 生命周期由调用方管理；使用统一 `fsm.Server` 时由 Server 持有并关闭共享 Store。
 
 未配置数据库时 `store.New(config.Store{})` 默认使用 `data/fsm/fsm.jsonl`。MySQL 和 Redis 通过同一配置模型选择：
 
@@ -218,34 +257,32 @@ go test ./store -v
 
 可视化能力位于独立的 `github.com/swkings/fsm/visualization` 包。业务进程和独立聚合服务使用同一个 `Server` 实现，但承担不同职责：
 
-- 业务进程内只有一个全局 Client Server，多个 FSM 在任意模块注册到该 Server，并在状态变化后通过进程内订阅主动 Push。
-- Client Server 同时托管当前进程的 React 可视化前端，可直接通过配置的地址访问。
+- 业务进程内创建一个顶层 `fsm.Server`，多个 FSM 可在任意模块通过 `Register` 或 `RegisterTo` 注册，并在状态变化后通过进程内订阅主动 Push。
+- 顶层 Server 同时管理 Store、当前进程的 React 可视化前端和可选的 MCP endpoint，可直接通过配置的地址访问。
 - 独立可视化服务不接收业务代码直接注册；它通过服务发现获得多个 Client Server 地址，再展开并 Pull 每个 Client Server 中的 FSM。
 
-### 配置业务进程 Client Server
+### 配置业务进程 Server
 
-`NewServer(config)` 创建或返回进程内全局单例 Server；Server 仍由调用方显式启动：
+业务进程优先使用 `server.MustNewServer(config.Config)`，无需分别创建 Store、Replay 数据源和可视化 Server：
 
 ```go
-clientServer := visualization.NewServer(
-    config.Visualization{
+s := server.MustNewServer(config.Config{
+    Store: config.Store{
+        JSONL: config.JSONL{Directory: "data/fsm"},
+    },
+    Visualization: config.Visualization{
         ServerAddress: "0.0.0.0:5005",
         TraceLimit:    100,
         PathPrefix:    "production",
     },
-)
-if err := clientServer.RegisterReplayStore("primary", "Production FSM Store", backend); err != nil {
+})
+if err := s.Register(orderFSM, paymentFSM); err != nil {
     return err
 }
-if err := clientServer.Start(); err != nil {
-    return err
-}
-defer visualization.ShutdownClientServer(context.Background())
-
-fmt.Println(visualization.ClientServerURL())
+services.Add(s)
 ```
 
-`RegisterReplayStore` 只把已有 FSM Store 挂载为 Replay 数据源，不接管 Store 生命周期，也不会写入 FSM 数据。`examples/generated/config.yaml` 使用顶层 `FSM.Store` 配置创建持久化后端，再由 FSM 和可视化 Replay 共享。
+独立聚合可视化服务与第三方 Client 适配仍可直接使用 `visualization.NewServerWithConfig`、`RegisterReplayStore` 和服务发现 API；这些底层接口保持兼容。
 
 内置 `fsm.FSM` 从 Payload 获取每个实例的显示名称和相对目录：
 
@@ -261,6 +298,8 @@ func (payload OrderPayload) Category() string {
 orderRegistration, err := visualization.RegisterClient(ctx, orderFSM)
 paymentRegistration, err := visualization.RegisterClient(ctx, paymentFSM)
 ```
+
+统一 Server 下无需直接调用 `visualization.RegisterClient`，改用 `s.Register(orderFSM, paymentFSM)` 或 `orderFSM.RegisterTo(s)`；Payload 的显示名称和目录规则保持不变。
 
 `PathPrefix` 与 Payload 的 `Category()` 使用 `/` 组合，例如上例最终目录为 `production/orders/checkout`；两者都允许为空。Payload 对应方法返回空字符串时，显示名称回退到 FSM 名称，目录仅使用非空部分。
 
@@ -283,6 +322,31 @@ type RegistrationConfigProvider interface {
     VisualizationRegistrationConfig() RegistrationConfig
 }
 ```
+
+## MCP Server
+
+MCP 协议实现、查询模型和 Streamable HTTP handler 位于独立的 `github.com/swkings/fsm/mcp` 包；`server` 包只负责按配置创建和管理其生命周期。
+
+配置 `FSM.MCP.Enabled: true` 或填写 `FSM.MCP.ServerAddress` 后，统一 Server 会启动官方 Go SDK v1.7.0 的无状态 Streamable HTTP endpoint，支持 MCP `2026-07-28` 并向后协商旧协议：
+
+```yaml
+FSM:
+  MCP:
+    Enabled: true
+    ServerAddress: 127.0.0.1:5006
+    Endpoint: /mcp
+    Name: order-fsm
+    Version: v1.0.0
+    MaxRequestBodyBytes: 4194304
+```
+
+MCP Server 暴露三个只读、幂等工具：
+
+- `fsm_list`：按 ID、名称、显示名称、路径或当前状态筛选注册 FSM。
+- `fsm_get`：查询指定 FSM 的完整状态、Payload、状态图、可用转移和 Trace。
+- `fsm_traces`：按 FSM ID 查询最新 Trace，可使用 `limit` 限制数量。
+
+启动后可通过 `s.MCPURL()` 获取完整 endpoint，通过 `s.VisualizationURL()` 获取可视化页面地址。
 
 ### 独立可视化服务聚合多个客户端
 

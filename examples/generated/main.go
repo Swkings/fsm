@@ -14,15 +14,14 @@ import (
 	"github.com/swkings/fsm/config"
 	"github.com/swkings/fsm/examples/generated/player"
 	"github.com/swkings/fsm/examples/generated/player/types"
-	"github.com/swkings/fsm/store"
-	"github.com/swkings/fsm/visualization"
+	"github.com/swkings/fsm/server"
 	"github.com/zeromicro/go-zero/core/conf"
+	"github.com/zeromicro/go-zero/core/service"
 )
 
 const (
-	minEventInterval  = 3 * time.Second
-	maxEventInterval  = 5 * time.Second
-	generatedStoreKey = "generated/player"
+	minEventInterval = 3 * time.Second
+	maxEventInterval = 5 * time.Second
 )
 
 type exampleConfig struct {
@@ -45,20 +44,7 @@ func run(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
-	fsmStore, err := store.New(appConfig.FSM.Store)
-	if err != nil {
-		return fmt.Errorf("create fsm store: %w", err)
-	}
-	defer fsmStore.Close()
-	clientServer := visualization.NewServer(appConfig.FSM.Visualization)
-	if err = clientServer.RegisterReplayStore("primary", "Generated Player Store", fsmStore); err != nil {
-		return fmt.Errorf("register replay store: %w", err)
-	}
-	if err := clientServer.Start(); err != nil {
-		_ = visualization.ShutdownClientServer(context.Background())
-		return fmt.Errorf("start visualization client server: %w", err)
-	}
-	defer visualization.ShutdownClientServer(context.Background())
+	s := server.MustNewServer(appConfig.FSM)
 
 	payload := &types.Payload{
 		Name:         "示例角色",
@@ -68,24 +54,40 @@ func run(ctx context.Context, configPath string) error {
 	}
 	machine := player.NewFSMPlayerAction(payload)
 	defer machine.Close()
-	if err = machine.BindStore(ctx, fsmStore, generatedStoreKey); err != nil {
-		return fmt.Errorf("restore generated player: %w", err)
+	if err = machine.Register(s); err != nil {
+		return fmt.Errorf("register generated player: %w", err)
 	}
-	registration, err := visualization.RegisterClient(ctx, machine)
-	if err != nil {
-		return fmt.Errorf("register generated player visualization: %w", err)
-	}
-	defer registration.Unregister()
 
-	fmt.Printf(
-		"player=%s initial=%s health=%d stamina=%d\nvisualization=%s\n",
-		payload.Name,
-		machine.GetCurrentState(),
-		payload.Health,
-		payload.Stamina,
-		clientServer.URL(),
-	)
-	return runRandomEvents(ctx, machine)
+	runContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	eventsDone := make(chan error, 1)
+	services := service.NewServiceGroup()
+	services.Add(s)
+	services.Add(service.WithStart(func() {
+		<-s.Started()
+		fmt.Printf(
+			"player=%s initial=%s health=%d stamina=%d\nvisualization=%s\nmcp=%s\n",
+			payload.Name,
+			machine.GetCurrentState(),
+			payload.Health,
+			payload.Stamina,
+			s.VisualizationURL(),
+			s.MCPURL(),
+		)
+		eventsDone <- runRandomEvents(runContext, machine)
+		cancel()
+	}))
+	go func() {
+		<-runContext.Done()
+		services.Stop()
+	}()
+	services.Start()
+	select {
+	case err = <-eventsDone:
+		return err
+	default:
+		return s.Err()
+	}
 }
 
 func loadExampleConfig(path string) (exampleConfig, error) {

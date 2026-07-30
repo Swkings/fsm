@@ -20,7 +20,7 @@ go run ./examples/basic
 go run ./examples/generated
 ```
 
-示例从 `generated/config.yaml` 读取 Client Server 地址、Trace 上限和目录前缀；FSM 显示名称与相对目录分别由 Payload 的 `DisplayName()`、`Category()` 提供，启动后可通过配置地址访问可视化前端。运行期间每隔随机 3～5 秒从当前状态的合法事件中选择一个执行；攻击事件会随机生成伤害参数，死亡后下一次合法事件为复活。可通过 `-config` 指定其他配置文件。运行时配置与 `player.fsm` 生成描述相互独立，不进入自动生成代码。
+示例从 `generated/config.yaml` 读取 Store、可视化和 MCP 配置，通过 `server.MustNewServer` 创建统一服务并加入 go-zero `ServiceGroup`。角色 FSM 使用 `machine.RegisterTo(server)` 注册后自动绑定 Store，同时可被可视化页面和 MCP 的 `fsm_list`、`fsm_get`、`fsm_traces` 工具查询。运行期间每隔随机 3～5 秒从当前状态的合法事件中选择一个执行；攻击事件会随机生成伤害参数，死亡后下一次合法事件为复活。可通过 `-config` 指定其他配置文件。运行时配置与 `player.fsm` 生成描述相互独立，不进入自动生成代码。
 
 重新生成工厂和模板代码：
 

@@ -20,6 +20,9 @@ func TestGeneratedExampleLoadsVisualizationConfig(t *testing.T) {
 	if config.FSM.Store.JSONL.Directory != "data/fsm" || config.FSM.Store.JSONL.Filename != "generated-player.jsonl" {
 		t.Fatalf("store config = %+v", config.FSM.Store)
 	}
+	if !config.FSM.MCP.Enabled || config.FSM.MCP.ServerAddress != "127.0.0.1:5006" || config.FSM.MCP.Endpoint != "/mcp" {
+		t.Fatalf("mcp config = %+v", config.FSM.MCP)
+	}
 }
 
 func TestGeneratedPayloadProvidesVisualizationMetadata(t *testing.T) {

@@ -8,10 +8,11 @@ const (
 )
 
 // Config 是 FSM 子系统的通用配置。第三方应用可将其声明为自身配置的
-// 顶层 FSM 字段，使持久化与可视化配置统一位于 FSM 命名空间下。
+// 顶层 FSM 字段。server.MustNewServer 只启用实际配置的 Store、Visualization 和 MCP。
 type Config struct {
 	Store         Store         `json:"store,optional"`
 	Visualization Visualization `json:"visualization,optional"`
+	MCP           MCP           `json:"mcp,optional"`
 }
 
 // Store 配置 FSM 持久化使用的存储。Driver 为空时根据连接配置推断，
@@ -73,4 +74,16 @@ type Visualization struct {
 type VisualizationServer struct {
 	Address    string
 	TraceLimit int
+}
+
+// MCP 配置进程内的 Model Context Protocol Server。Enabled 为 true 或
+// ServerAddress 非空时启用；Endpoint 默认 /mcp。HTTP 传输使用无状态
+// Streamable HTTP，以支持最新协议并向后兼容旧版 MCP Client。
+type MCP struct {
+	Enabled             bool   `json:"enabled,optional"`
+	ServerAddress       string `json:"serverAddress,optional"`
+	Endpoint            string `json:"endpoint,optional"`
+	Name                string `json:"name,optional"`
+	Version             string `json:"version,optional"`
+	MaxRequestBodyBytes int64  `json:"maxRequestBodyBytes,optional"`
 }
