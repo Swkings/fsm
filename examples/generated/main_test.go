@@ -13,7 +13,7 @@ func TestGeneratedPlayerTransitionGraphAndLogic(t *testing.T) {
 	machine := player.NewFSMPlayerAction(payload)
 	defer func() { _ = machine.Close() }()
 
-	transitionCounts := map[fsm.FSMState]int{
+	transitionCounts := map[fsm.State]int{
 		types.StateEnum.IDLE:         7,
 		types.StateEnum.WALK:         7,
 		types.StateEnum.RUN:          5,
@@ -31,7 +31,7 @@ func TestGeneratedPlayerTransitionGraphAndLogic(t *testing.T) {
 	}
 
 	sequence := []struct {
-		event  fsm.FSMEvent
+		event  fsm.Event
 		params []any
 	}{
 		{event: types.EventEnum.MOVE},

@@ -106,7 +106,7 @@ func main() {
 func generateEvents(ctx context.Context, door *fsm.FSM[*doorPayload], worker *externalWorker) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	doorEvent := fsm.FSMEvent("open")
+	doorEvent := fsm.Event("open")
 	for {
 		select {
 		case <-ticker.C:

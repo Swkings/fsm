@@ -5,30 +5,30 @@ package types
 
 import "github.com/swkings/fsm"
 
-var FSMNamePlayerAction = fsm.FSMName("PlayerAction")
+var FSMNamePlayerAction = fsm.Name("PlayerAction")
 
 var (
-	sIDLE         = fsm.FSMState("IDLE")
-	sWALK         = fsm.FSMState("WALK")
-	sRUN          = fsm.FSMState("RUN")
-	sJUMP_START   = fsm.FSMState("JUMP_START")
-	sIN_AIR       = fsm.FSMState("IN_AIR")
-	sATTACK_LIGHT = fsm.FSMState("ATTACK_LIGHT")
-	sATTACK_HEAVY = fsm.FSMState("ATTACK_HEAVY")
-	sHURT         = fsm.FSMState("HURT")
-	sDIE          = fsm.FSMState("DIE")
+	sIDLE         = fsm.State("IDLE")
+	sWALK         = fsm.State("WALK")
+	sRUN          = fsm.State("RUN")
+	sJUMP_START   = fsm.State("JUMP_START")
+	sIN_AIR       = fsm.State("IN_AIR")
+	sATTACK_LIGHT = fsm.State("ATTACK_LIGHT")
+	sATTACK_HEAVY = fsm.State("ATTACK_HEAVY")
+	sHURT         = fsm.State("HURT")
+	sDIE          = fsm.State("DIE")
 )
 
 type stateEnumStruct struct {
-	IDLE         fsm.FSMState
-	WALK         fsm.FSMState
-	RUN          fsm.FSMState
-	JUMP_START   fsm.FSMState
-	IN_AIR       fsm.FSMState
-	ATTACK_LIGHT fsm.FSMState
-	ATTACK_HEAVY fsm.FSMState
-	HURT         fsm.FSMState
-	DIE          fsm.FSMState
+	IDLE         fsm.State
+	WALK         fsm.State
+	RUN          fsm.State
+	JUMP_START   fsm.State
+	IN_AIR       fsm.State
+	ATTACK_LIGHT fsm.State
+	ATTACK_HEAVY fsm.State
+	HURT         fsm.State
+	DIE          fsm.State
 }
 
 var StateEnum = stateEnumStruct{
@@ -44,31 +44,31 @@ var StateEnum = stateEnumStruct{
 }
 
 var (
-	eMOVE      = fsm.FSMEvent("MOVE")
-	eRUN       = fsm.FSMEvent("RUN")
-	eSTOP      = fsm.FSMEvent("STOP")
-	eJUMP      = fsm.FSMEvent("JUMP")
-	eHIT_LIGHT = fsm.FSMEvent("HIT_LIGHT")
-	eHIT_HEAVY = fsm.FSMEvent("HIT_HEAVY")
-	eANIM_END  = fsm.FSMEvent("ANIM_END")
-	eLAND      = fsm.FSMEvent("LAND")
-	eDAMAGE    = fsm.FSMEvent("DAMAGE")
-	eDEAD      = fsm.FSMEvent("DEAD")
-	eREVIVE    = fsm.FSMEvent("REVIVE")
+	eMOVE      = fsm.Event("MOVE")
+	eRUN       = fsm.Event("RUN")
+	eSTOP      = fsm.Event("STOP")
+	eJUMP      = fsm.Event("JUMP")
+	eHIT_LIGHT = fsm.Event("HIT_LIGHT")
+	eHIT_HEAVY = fsm.Event("HIT_HEAVY")
+	eANIM_END  = fsm.Event("ANIM_END")
+	eLAND      = fsm.Event("LAND")
+	eDAMAGE    = fsm.Event("DAMAGE")
+	eDEAD      = fsm.Event("DEAD")
+	eREVIVE    = fsm.Event("REVIVE")
 )
 
 type eventEnumStruct struct {
-	MOVE      fsm.FSMEvent
-	RUN       fsm.FSMEvent
-	STOP      fsm.FSMEvent
-	JUMP      fsm.FSMEvent
-	HIT_LIGHT fsm.FSMEvent
-	HIT_HEAVY fsm.FSMEvent
-	ANIM_END  fsm.FSMEvent
-	LAND      fsm.FSMEvent
-	DAMAGE    fsm.FSMEvent
-	DEAD      fsm.FSMEvent
-	REVIVE    fsm.FSMEvent
+	MOVE      fsm.Event
+	RUN       fsm.Event
+	STOP      fsm.Event
+	JUMP      fsm.Event
+	HIT_LIGHT fsm.Event
+	HIT_HEAVY fsm.Event
+	ANIM_END  fsm.Event
+	LAND      fsm.Event
+	DAMAGE    fsm.Event
+	DEAD      fsm.Event
+	REVIVE    fsm.Event
 }
 
 var EventEnum = eventEnumStruct{

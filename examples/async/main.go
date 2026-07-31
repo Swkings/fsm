@@ -123,7 +123,7 @@ func eventHandler(name string) fsm.Handler[*payload] {
 	}}
 }
 
-func mustSubmit(machine *fsm.FSM[*payload], event fsm.FSMEvent, options ...fsm.AsyncEventOption) *fsm.AsyncEventReceipt {
+func mustSubmit(machine *fsm.FSM[*payload], event fsm.Event, options ...fsm.AsyncEventOption) *fsm.AsyncEventReceipt {
 	receipt, err := machine.SubmitEvent(event, options...)
 	if err != nil {
 		panic(err)

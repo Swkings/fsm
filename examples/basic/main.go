@@ -24,9 +24,9 @@ func main() {
 	defer func() { _ = machine.Close() }()
 
 	machine.SetTransitions(fsm.NewTransitionItem(
-		fsm.FSMEvent("open"),
-		fsm.FSMState("closed"),
-		fsm.FSMState("opened"),
+		fsm.Event("open"),
+		fsm.State("closed"),
+		fsm.State("opened"),
 		fsm.Handler[*doorPayload]{
 			BeforeHandler: func(machine *fsm.FSM[*doorPayload], _ ...any) error {
 				machine.Payload.Stages = append(machine.Payload.Stages, "before")

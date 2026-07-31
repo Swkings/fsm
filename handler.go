@@ -2,7 +2,21 @@ package fsm
 
 import "context"
 
-func (handler Handler[T]) apply(ctx context.Context, fsm *FSM[T], params ...any) error {
+// Actor is one handler stage. Params are the values passed to ProcessEvent.
+type Actor[T PayloadI] func(*FSM[T], ...any) error
+
+// Handler defines the fixed before, action, and after stages of a transition.
+type Handler[T PayloadI] struct {
+	BeforeHandler Actor[T]
+	Handler       Actor[T]
+	AfterHandler  Actor[T]
+}
+
+func (handler Handler[T]) apply(
+	ctx context.Context,
+	fsm *FSM[T],
+	params ...any,
+) error {
 	for _, stage := range []Actor[T]{
 		handler.BeforeHandler,
 		handler.Handler,

@@ -8,7 +8,7 @@ import (
 
 type queuedEvent struct {
 	id          string
-	event       FSMEvent
+	event       Event
 	priority    EventPriority
 	ctx         context.Context
 	notify      chan<- AsyncEventResult

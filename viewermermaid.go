@@ -79,7 +79,7 @@ func writeFlowChartGraphType(buf *bytes.Buffer) {
 }
 
 // writeFlowChartStates 按稳定顺序写入状态节点及其内部节点 ID。
-func writeFlowChartStates(buf *bytes.Buffer, sortedStates []FSMState, statesToIDMap map[string]string) {
+func writeFlowChartStates(buf *bytes.Buffer, sortedStates []State, statesToIDMap map[string]string) {
 	for _, state := range sortedStates {
 		fmt.Fprintf(buf, `    %s[%s]`, statesToIDMap[string(state)], strconv.Quote(string(state)))
 		buf.WriteString("\n")
@@ -89,7 +89,7 @@ func writeFlowChartStates(buf *bytes.Buffer, sortedStates []FSMState, statesToID
 }
 
 // writeFlowChartTransitions 将转移规则写为带事件标签的有向边。
-func writeFlowChartTransitions(buf *bytes.Buffer, transitions map[EventStateKey]FSMState, sortedTransitionKeys []EventStateKey, statesToIDMap map[string]string) {
+func writeFlowChartTransitions(buf *bytes.Buffer, transitions map[EventStateKey]State, sortedTransitionKeys []EventStateKey, statesToIDMap map[string]string) {
 	for _, transition := range sortedTransitionKeys {
 		target := transitions[transition]
 		fmt.Fprintf(buf, `    %s -->|%s| %s`, statesToIDMap[string(transition.FromState)], strconv.Quote(string(transition.Event)), statesToIDMap[string(target)])

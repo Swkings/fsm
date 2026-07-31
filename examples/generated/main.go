@@ -136,7 +136,7 @@ func randomEventInterval() time.Duration {
 	return minEventInterval + time.Duration(rand.IntN(seconds))*time.Second
 }
 
-func randomEventParams(event fsm.FSMEvent) []any {
+func randomEventParams(event fsm.Event) []any {
 	switch event {
 	case types.EventEnum.HIT_LIGHT:
 		return []any{types.AttackParams{Damage: 10 + rand.IntN(11)}}
@@ -147,7 +147,7 @@ func randomEventParams(event fsm.FSMEvent) []any {
 	}
 }
 
-func process(machine *fsm.FSM[*types.Payload], event fsm.FSMEvent, params ...any) error {
+func process(machine *fsm.FSM[*types.Payload], event fsm.Event, params ...any) error {
 	trace, err := machine.ProcessEvent(event, params...)
 	if err != nil {
 		return fmt.Errorf("process %s from %s: %w", event, trace.FromState, err)

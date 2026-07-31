@@ -5,17 +5,17 @@ package types
 
 import "{{.FSMData.FSMEnginePackage}}/fsm"
 
-var FSMName{{.FSMData.FSM.Name}} = fsm.FSMName("{{.FSMData.FSM.Name}}")
+var FSMName{{.FSMData.FSM.Name}} = fsm.Name("{{.FSMData.FSM.Name}}")
 
 var (
     {{- range .FSMData.States}}
-    s{{.Value}} = fsm.FSMState("{{.Value}}")
+    s{{.Value}} = fsm.State("{{.Value}}")
     {{- end}}
 )
 
 type stateEnumStruct struct {
     {{- range .FSMData.States}}
-    {{.Value}} fsm.FSMState
+    {{.Value}} fsm.State
     {{- end}}
 }
 
@@ -27,13 +27,13 @@ var StateEnum = stateEnumStruct{
 
 var (
     {{- range .FSMData.Events}}
-    e{{.Value}} = fsm.FSMEvent("{{.Value}}")
+    e{{.Value}} = fsm.Event("{{.Value}}")
     {{- end}}
 )
 
 type eventEnumStruct struct {
     {{- range .FSMData.Events}}
-    {{.Value}} fsm.FSMEvent
+    {{.Value}} fsm.Event
     {{- end}}
 }
 

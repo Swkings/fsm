@@ -3,6 +3,7 @@ package fsm
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -10,7 +11,7 @@ import (
 )
 
 // getSortedTransitionKeys 按源状态、事件的顺序稳定排列转移键，保证每次生成的图文本一致。
-func getSortedTransitionKeys(transitions map[EventStateKey]FSMState) []EventStateKey {
+func getSortedTransitionKeys(transitions map[EventStateKey]State) []EventStateKey {
 	sortedTransitionKeys := make([]EventStateKey, 0)
 
 	for transition := range transitions {
@@ -28,7 +29,7 @@ func getSortedTransitionKeys(transitions map[EventStateKey]FSMState) []EventStat
 }
 
 // getSortedStates 收集转移图中出现的全部状态，按名称排序，并为每个状态生成稳定的节点 ID。
-func getSortedStates(transitions map[EventStateKey]FSMState, additionalStates ...FSMState) ([]FSMState, map[string]string) {
+func getSortedStates(transitions map[EventStateKey]State, additionalStates ...State) ([]State, map[string]string) {
 	statesToIDMap := make(map[string]string)
 	for _, state := range additionalStates {
 		statesToIDMap[string(state)] = ""
@@ -49,10 +50,10 @@ func getSortedStates(transitions map[EventStateKey]FSMState, additionalStates ..
 	}
 	sort.Strings(sortedStates)
 
-	states := make([]FSMState, len(sortedStates))
+	states := make([]State, len(sortedStates))
 	for i, state := range sortedStates {
 		statesToIDMap[state] = fmt.Sprintf("id%d", i)
-		states[i] = FSMState(state)
+		states[i] = State(state)
 	}
 
 	return states, statesToIDMap
@@ -68,7 +69,7 @@ func writeHeaderLine(buf *bytes.Buffer) {
 }
 
 // writeTransitions 将转移规则写为带事件标签的有向边。
-func writeTransitions(buf *bytes.Buffer, sortedEKeys []EventStateKey, transitions map[EventStateKey]FSMState) {
+func writeTransitions(buf *bytes.Buffer, sortedEKeys []EventStateKey, transitions map[EventStateKey]State) {
 	for _, k := range sortedEKeys {
 		v := transitions[k]
 		fmt.Fprintf(buf, `    %s -> %s [ label = %s ];`, strconv.Quote(string(k.FromState)), strconv.Quote(string(v)), strconv.Quote(string(k.Event)))
@@ -79,7 +80,7 @@ func writeTransitions(buf *bytes.Buffer, sortedEKeys []EventStateKey, transition
 }
 
 // writeStates 写入全部状态节点，并使用红色边框标识当前状态。
-func writeStates(buf *bytes.Buffer, current FSMState, sortedStateKeys []FSMState) {
+func writeStates(buf *bytes.Buffer, current State, sortedStateKeys []State) {
 	for _, k := range sortedStateKeys {
 		if k == current {
 			fmt.Fprintf(buf, `    %s [color = "red"];`, strconv.Quote(string(k)))
@@ -132,4 +133,14 @@ func (fsm *FSM[T]) VisualizeWithDetails(outFile string, dot string, format strin
 	}
 
 	return nil
+}
+
+func (fsm *FSM[T]) visualizationSnapshot() (map[EventStateKey]State, State) {
+	fsm.configLock.RLock()
+	transitions := make(map[EventStateKey]State, len(fsm.transitions))
+	maps.Copy(transitions, fsm.transitions)
+	fsm.configLock.RUnlock()
+	currentState, _ := fsm.stateSnapshot()
+
+	return transitions, currentState
 }

@@ -9,7 +9,7 @@ import (
 )
 
 func TestDotStringIncludesIsolatedCurrentStateAndEscapesText(t *testing.T) {
-	current := FSMState("idle\"state")
+	current := State("idle\"state")
 	machine := NewFSM("test", current, &testPayload{})
 
 	dot := machine.DotString()
@@ -22,8 +22,8 @@ func TestDotStringIncludesIsolatedCurrentStateAndEscapesText(t *testing.T) {
 }
 
 func TestMermaidUsesStableIDsAndEscapedLabels(t *testing.T) {
-	current := FSMState("idle\"state")
-	event := FSMEvent("start|now")
+	current := State("idle\"state")
+	event := Event("start|now")
 	machine := NewFSM("test", current, &testPayload{})
 	machine.SetTransitions(NewTransitionItem[*testPayload](event, current, "running state", Handler[*testPayload]{}))
 

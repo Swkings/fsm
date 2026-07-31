@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/swkings/fsm/ds"
 )
 
 func (fsm *FSM[T]) runEventQueue() {
@@ -126,9 +127,9 @@ func (fsm *FSM[T]) rejectQueuedEvent(item *queuedEvent, status AsyncEventStatus,
 	fsm.completeQueuedEvent(item, status, trace, err, time.Time{})
 }
 
-func (fsm *FSM[T]) rejectedEventTrace(event FSMEvent, err error) TransitionTrace {
+func (fsm *FSM[T]) rejectedEventTrace(event Event, err error) TransitionTrace {
 	state, previousID := fsm.stateSnapshot()
-	trace := NewTransitionTrace(previousID, uuid.NewString(), state, event).Start()
+	trace := ds.NewTransitionTrace(previousID, uuid.NewString(), state, event).Start()
 	trace.SetFinalState(state).TransitionFail().End(err)
 
 	return trace.TrimPtr()

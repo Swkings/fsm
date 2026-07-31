@@ -457,7 +457,7 @@ func TestSubmitAfterClose(t *testing.T) {
 func submitTrackedEvent(
 	t *testing.T,
 	machine *FSM[*testPayload],
-	event FSMEvent,
+	event Event,
 	options ...AsyncEventOption,
 ) (*AsyncEventReceipt, <-chan AsyncEventResult, context.CancelFunc) {
 	t.Helper()

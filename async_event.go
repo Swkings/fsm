@@ -171,7 +171,7 @@ func WithEventNotify(notify chan<- AsyncEventResult) AsyncEventOption {
 }
 
 // SubmitEvent queues an event. Omitting context and notify uses fire-and-forget mode.
-func (fsm *FSM[T]) SubmitEvent(event FSMEvent, options ...AsyncEventOption) (*AsyncEventReceipt, error) {
+func (fsm *FSM[T]) SubmitEvent(event Event, options ...AsyncEventOption) (*AsyncEventReceipt, error) {
 	config := asyncEventConfig{priority: EventPriorityHigh}
 	for _, option := range options {
 		if option == nil {

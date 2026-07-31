@@ -26,7 +26,7 @@ func (fsm *FSM[T]) VisualizationDefinition() visualization.Definition {
 	fsm.stateLock.RUnlock()
 
 	fsm.configLock.RLock()
-	transitions := make(map[EventStateKey]FSMState, len(fsm.transitions))
+	transitions := make(map[EventStateKey]State, len(fsm.transitions))
 	for key, target := range fsm.transitions {
 		transitions[key] = target
 	}
@@ -140,7 +140,7 @@ func (fsm *FSM[T]) runtimeVisualizationData() visualization.RealtimeData {
 	}
 }
 
-func newVisualizationMetadataSnapshot(metadata FSMMetadata) visualization.MetadataSnapshot {
+func newVisualizationMetadataSnapshot(metadata Metadata) visualization.MetadataSnapshot {
 	return visualization.MetadataSnapshot{
 		InstanceID:      metadata.InstanceID,
 		TransitionID:    metadata.TransitionID,
@@ -200,7 +200,7 @@ func (fsm *FSM[T]) hasRuntimeObservers() bool {
 	return len(fsm.runtimeObservers) > 0
 }
 
-func (fsm *FSM[T]) rejectedRuntimeEventTrace(event FSMEvent, err error) TransitionTrace {
+func (fsm *FSM[T]) rejectedRuntimeEventTrace(event Event, err error) TransitionTrace {
 	trace := fsm.rejectedEventTrace(event, err)
 	fsm.notifyRuntimeObservers(&trace)
 

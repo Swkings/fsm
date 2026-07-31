@@ -31,7 +31,11 @@ type persistenceBinding struct {
 
 // BindStore 将持久化后端绑定到 FSM，并按 key 恢复最近一次成功保存的数据。
 // 找不到历史数据时会保存当前初始快照。key 应是业务实例的稳定标识。
-func (fsm *FSM[T]) BindStore(ctx context.Context, backend store.StoreI, key string) error {
+func (fsm *FSM[T]) BindStore(
+	ctx context.Context,
+	backend store.StoreI,
+	key string,
+) error {
 	if fsm == nil || backend == nil {
 		return fmt.Errorf("%w: store is nil", ErrPersistenceFailed)
 	}
@@ -105,9 +109,11 @@ func (fsm *FSM[T]) Save(ctx context.Context) error {
 func (fsm *FSM[T]) restoreRecord(record store.Record) error {
 	metadata := record.Metadata
 	if metadata.Name != "" && metadata.Name != string(fsm.Name) {
-		return fmt.Errorf("%w: stored=%q current=%q", ErrRestoreName, metadata.Name, fsm.Name)
+		return fmt.Errorf(
+			"%w: stored=%q current=%q", ErrRestoreName, metadata.Name, fsm.Name,
+		)
 	}
-	if metadata.CurrentState != "" && !fsm.knownState(FSMState(metadata.CurrentState)) {
+	if metadata.CurrentState != "" && !fsm.knownState(State(metadata.CurrentState)) {
 		return fmt.Errorf("%w: %q", ErrRestoreState, metadata.CurrentState)
 	}
 	payload := fsm.Payload
@@ -121,7 +127,9 @@ func (fsm *FSM[T]) restoreRecord(record store.Record) error {
 			}
 		}
 		if err := json.Unmarshal(metadata.Payload, target); err != nil {
-			return fmt.Errorf("%w: restore payload: %v", ErrPersistenceFailed, err)
+			return fmt.Errorf(
+				"%w: restore payload: %v", ErrPersistenceFailed, err,
+			)
 		}
 		hasPayload = true
 	}
@@ -133,9 +141,9 @@ func (fsm *FSM[T]) restoreRecord(record store.Record) error {
 		fsm.TtId = metadata.TransitionID
 	}
 	fsm.Describe = metadata.Description
-	fsm.fromState = FSMState(metadata.PreviousState)
-	fsm.fromEvent = FSMEvent(metadata.PreviousEvent)
-	fsm.currentState = FSMState(metadata.CurrentState)
+	fsm.fromState = State(metadata.PreviousState)
+	fsm.fromEvent = Event(metadata.PreviousEvent)
+	fsm.currentState = State(metadata.CurrentState)
 	fsm.processingEvent = EventEmpty
 	fsm.processingContext = context.Background()
 	if hasPayload {
@@ -146,7 +154,7 @@ func (fsm *FSM[T]) restoreRecord(record store.Record) error {
 	return nil
 }
 
-func (fsm *FSM[T]) knownState(state FSMState) bool {
+func (fsm *FSM[T]) knownState(state State) bool {
 	if state == fsm.GetCurrentState() {
 		return true
 	}
@@ -161,7 +169,10 @@ func (fsm *FSM[T]) knownState(state FSMState) bool {
 	return false
 }
 
-func (fsm *FSM[T]) persistTrace(ctx context.Context, trace TransitionTrace) error {
+func (fsm *FSM[T]) persistTrace(
+	ctx context.Context,
+	trace TransitionTrace,
+) error {
 	storeTrace := store.Trace{
 		TransitionID: trace.TtId,
 		PreviousID:   trace.PrevTtId,
@@ -182,7 +193,11 @@ func (fsm *FSM[T]) persistTrace(ctx context.Context, trace TransitionTrace) erro
 	return fsm.saveSnapshot(ctx, storeTrace, trace.TransitionResult)
 }
 
-func (fsm *FSM[T]) saveSnapshot(ctx context.Context, trace store.Trace, success bool) error {
+func (fsm *FSM[T]) saveSnapshot(
+	ctx context.Context,
+	trace store.Trace,
+	success bool,
+) error {
 	fsm.persistence.RLock()
 	backend, key := fsm.persistence.backend, fsm.persistence.key
 	fsm.persistence.RUnlock()
@@ -217,21 +232,29 @@ func (fsm *FSM[T]) storeTransitions() []store.Transition {
 	fsm.configLock.RLock()
 	transitions := make([]store.Transition, 0, len(fsm.transitions))
 	for key, state := range fsm.transitions {
-		transitions = append(transitions, store.Transition{FromState: string(key.FromState), Event: string(key.Event), ToState: string(state)})
+		transitions = append(
+			transitions, store.Transition{
+				FromState: string(key.FromState),
+				Event:     string(key.Event),
+				ToState:   string(state),
+			},
+		)
 	}
 	fsm.configLock.RUnlock()
-	sort.Slice(transitions, func(i, j int) bool {
-		if transitions[i].FromState != transitions[j].FromState {
-			return transitions[i].FromState < transitions[j].FromState
-		}
+	sort.Slice(
+		transitions, func(i, j int) bool {
+			if transitions[i].FromState != transitions[j].FromState {
+				return transitions[i].FromState < transitions[j].FromState
+			}
 
-		return transitions[i].Event < transitions[j].Event
-	})
+			return transitions[i].Event < transitions[j].Event
+		},
+	)
 
 	return transitions
 }
 
-func metadataToStore(metadata FSMMetadata) store.Metadata {
+func metadataToStore(metadata Metadata) store.Metadata {
 	return store.Metadata{
 		InstanceID:      metadata.InstanceID,
 		TransitionID:    metadata.TransitionID,

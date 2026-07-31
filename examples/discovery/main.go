@@ -76,7 +76,7 @@ func main() {
 }
 
 func newWorkerFSM() *fsm.FSM[*workerPayload] {
-	worker := fsm.NewFSM("worker", fsm.FSMState("idle"), &workerPayload{})
+	worker := fsm.NewFSM("worker", fsm.State("idle"), &workerPayload{})
 	worker.SetTransitions(
 		fsm.NewTransitionItem("start", "idle", "running", fsm.Handler[*workerPayload]{
 			Handler: func(machine *fsm.FSM[*workerPayload], _ ...any) error {
@@ -125,7 +125,7 @@ func serveRegistry(clientServerURL string) (string, func(), error) {
 func generateEvents(ctx context.Context, worker *fsm.FSM[*workerPayload]) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	events := []fsm.FSMEvent{"start", "finish"}
+	events := []fsm.Event{"start", "finish"}
 	for index := 0; index < len(events); index++ {
 		select {
 		case <-ticker.C:

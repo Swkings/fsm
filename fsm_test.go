@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/swkings/fsm/ds"
 )
 
 type testPayload struct {
@@ -337,7 +339,7 @@ func TestConcurrentConfigurationProcessingAndVisualization(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 100; i++ {
-			event := FSMEvent(fmt.Sprintf("event-%d", i))
+			event := Event(fmt.Sprintf("event-%d", i))
 			machine.SetTransitions(NewTransitionItem[*testPayload](event, "idle", "idle", Handler[*testPayload]{}))
 		}
 	}()
@@ -368,7 +370,7 @@ func TestConcurrentConfigurationProcessingAndVisualization(t *testing.T) {
 }
 
 func TestTransitionTraceStringAndDuration(t *testing.T) {
-	trace := NewTransitionTrace("previous", "current", "idle", "start").Start()
+	trace := ds.NewTransitionTrace("previous", "current", "idle", "start").Start()
 	time.Sleep(time.Millisecond)
 	trace.SetFinalState("idle").TransitionFail().End(errors.New("visible error"))
 

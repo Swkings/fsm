@@ -3,45 +3,37 @@ package fsm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
+
+	fsmserver "github.com/swkings/fsm/server"
 )
 
-// SetPayload replaces the FSM payload under the state lock.
-func (fsm *FSM[T]) SetPayload(payload T) *FSM[T] {
-	fsm.stateLock.Lock()
-	defer fsm.notifyRuntimeObservers(nil)
-	defer fsm.stateLock.Unlock()
-	fsm.Payload = payload
+// Register registers the FSM with a configuration-driven server.
+func (fsm *FSM[T]) Register(server *fsmserver.Server) error {
+	if server == nil {
+		return errors.New("fsm server is nil")
+	}
 
-	return fsm
-}
-
-// SetCurrentState directly updates state without running a transition handler.
-func (fsm *FSM[T]) SetCurrentState(state FSMState) {
-	fsm.stateLock.Lock()
-	defer fsm.notifyRuntimeObservers(nil)
-	defer fsm.stateLock.Unlock()
-	fsm.currentState = state
-}
-
-// GetCurrentState returns the current committed state.
-func (fsm *FSM[T]) GetCurrentState() FSMState {
-	fsm.stateLock.RLock()
-	defer fsm.stateLock.RUnlock()
-
-	return fsm.currentState
+	return server.Register(fsm)
 }
 
 // Metadata returns an independent snapshot of the FSM and serialized payload.
-func (fsm *FSM[T]) Metadata() FSMMetadata {
+func (fsm *FSM[T]) Metadata() Metadata {
 	if fsm == nil {
-		return FSMMetadata{Payload: json.RawMessage("null")}
+		return Metadata{Payload: json.RawMessage("null")}
 	}
 	fsm.stateLock.RLock()
-	metadata := FSMMetadata{
-		InstanceID: fsm.InstanceID, TransitionID: fsm.TtId, Name: fsm.Name,
-		Description: fsm.Describe, PreviousState: fsm.fromState, PreviousEvent: fsm.fromEvent,
-		CurrentState: fsm.currentState, ProcessingEvent: fsm.processingEvent, Payload: json.RawMessage("null"),
+	metadata := Metadata{
+		InstanceID:      fsm.InstanceID,
+		TransitionID:    fsm.TtId,
+		Name:            fsm.Name,
+		Description:     fsm.Describe,
+		PreviousState:   fsm.fromState,
+		PreviousEvent:   fsm.fromEvent,
+		CurrentState:    fsm.currentState,
+		ProcessingEvent: fsm.processingEvent,
+		Payload:         json.RawMessage("null"),
 	}
 	payload := fsm.Payload
 	fsm.stateLock.RUnlock()
@@ -91,14 +83,17 @@ func (fsm *FSM[T]) GetEventContext() context.Context {
 	return fsm.processingContext
 }
 
-func (fsm *FSM[T]) stateSnapshot() (FSMState, string) {
+func (fsm *FSM[T]) stateSnapshot() (State, string) {
 	fsm.stateLock.RLock()
 	defer fsm.stateLock.RUnlock()
 
 	return fsm.currentState, fsm.TtId
 }
 
-func (fsm *FSM[T]) beginProcessingEvent(ctx context.Context, event FSMEvent) (FSMState, string) {
+func (fsm *FSM[T]) beginProcessingEvent(
+	ctx context.Context,
+	event Event,
+) (State, string) {
 	fsm.stateLock.Lock()
 	defer fsm.stateLock.Unlock()
 	fsm.processingEvent, fsm.processingContext = event, ctx
@@ -112,7 +107,12 @@ func (fsm *FSM[T]) clearProcessingEvent() {
 	fsm.processingEvent, fsm.processingContext = EventEmpty, context.Background()
 }
 
-func (fsm *FSM[T]) commitTransition(fromState FSMState, event FSMEvent, toState FSMState, ttID string) (FSMState, error) {
+func (fsm *FSM[T]) commitTransition(
+	fromState State,
+	event Event,
+	toState State,
+	ttID string,
+) (State, error) {
 	fsm.stateLock.Lock()
 	defer fsm.stateLock.Unlock()
 	if fsm.currentState != fromState {

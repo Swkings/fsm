@@ -26,8 +26,17 @@ type TransitionTrace struct {
 }
 
 // NewTransitionTrace creates a trace. Start records its actual start time.
-func NewTransitionTrace(prevID, id string, fromState FSMState, event FSMEvent) *TransitionTrace {
-	return &TransitionTrace{TtId: id, PrevTtId: prevID, FromState: fromState, Event: event}
+func NewTransitionTrace(
+	prevID, id string,
+	fromState FSMState,
+	event FSMEvent,
+) *TransitionTrace {
+	return &TransitionTrace{
+		TtId:      id,
+		PrevTtId:  prevID,
+		FromState: fromState,
+		Event:     event,
+	}
 }
 
 // Start records the transition start time.
@@ -133,11 +142,18 @@ func (trace *TransitionTrace) String() string {
 		BeginTime        int64    `json:"BeginTime"`
 		EndTime          int64    `json:"EndTime"`
 	}{
-		TtId: trace.TtId, PrevTtId: trace.PrevTtId, FromState: trace.FromState,
-		Event: trace.Event, ToState: trace.ToState, TransitionResult: trace.TransitionResult,
-		FinalState: trace.FinalState, Error: errorMessage,
-		EntryMetadata: trace.EntryMetadata.Clone(), ExitMetadata: trace.ExitMetadata.Clone(),
-		BeginTime: trace.BeginTime, EndTime: trace.EndTime,
+		TtId:             trace.TtId,
+		PrevTtId:         trace.PrevTtId,
+		FromState:        trace.FromState,
+		Event:            trace.Event,
+		ToState:          trace.ToState,
+		TransitionResult: trace.TransitionResult,
+		FinalState:       trace.FinalState,
+		Error:            errorMessage,
+		EntryMetadata:    trace.EntryMetadata.Clone(),
+		ExitMetadata:     trace.ExitMetadata.Clone(),
+		BeginTime:        trace.BeginTime,
+		EndTime:          trace.EndTime,
 	}
 	data, err := json.Marshal(view)
 	if err != nil {
