@@ -31,14 +31,18 @@ func (fsm *FSM[T]) runEventQueue() {
 		}
 		if item.priority == EventPriorityLow && fsm.eventQueue.hasHighPriorityEvent() {
 			if !fsm.eventQueue.requeueFront(item) {
-				fsm.rejectQueuedEvent(item, AsyncEventCanceled, ErrorEventQueueClosed)
+				fsm.rejectQueuedEvent(
+					item, AsyncEventCanceled, ErrorEventQueueClosed,
+				)
 			}
 
 			continue
 		}
 		if !fsm.tryAcquireQueuedEvent() {
 			if !fsm.eventQueue.requeueFront(item) {
-				fsm.rejectQueuedEvent(item, AsyncEventCanceled, ErrorEventQueueClosed)
+				fsm.rejectQueuedEvent(
+					item, AsyncEventCanceled, ErrorEventQueueClosed,
+				)
 
 				continue
 			}
@@ -48,14 +52,18 @@ func (fsm *FSM[T]) runEventQueue() {
 		}
 		stopEventExpiryTimer(item)
 		startedAt := time.Now()
-		executionContext, cancel := eventExecutionContext(item.ctx, fsm.eventQueue.ctx)
+		executionContext, cancel := eventExecutionContext(
+			item.ctx, fsm.eventQueue.ctx,
+		)
 		trace, err := fsm.processEventLocked(executionContext, item.event)
 		cancel()
 		fsm.releaseEventExecution()
 		status := AsyncEventSucceeded
 		if err != nil {
 			status = AsyncEventFailed
-			if item.ctx != nil && (item.ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			if item.ctx != nil && (item.ctx.Err() != nil || errors.Is(
+				err, context.Canceled,
+			) || errors.Is(err, context.DeadlineExceeded)) {
 				status = AsyncEventCanceled
 			}
 		}
@@ -80,7 +88,11 @@ func (fsm *FSM[T]) waitForQueueSchedule() {
 	}
 }
 
-func queuedEventCancellation(item *queuedEvent) (AsyncEventStatus, error, bool) {
+func queuedEventCancellation(item *queuedEvent) (
+	AsyncEventStatus,
+	error,
+	bool,
+) {
 	if !item.expiresAt.IsZero() && !time.Now().Before(item.expiresAt) {
 		return AsyncEventExpired, context.DeadlineExceeded, true
 	}
@@ -95,7 +107,10 @@ func queuedEventCancellation(item *queuedEvent) (AsyncEventStatus, error, bool) 
 	}
 }
 
-func eventExecutionContext(parent, queueContext context.Context) (context.Context, context.CancelFunc) {
+func eventExecutionContext(parent, queueContext context.Context) (
+	context.Context,
+	context.CancelFunc,
+) {
 	if parent == nil {
 		return context.Background(), func() {}
 	}
@@ -114,7 +129,11 @@ func stopEventExpiryTimer(item *queuedEvent) {
 	}
 }
 
-func (fsm *FSM[T]) rejectQueuedEvent(item *queuedEvent, status AsyncEventStatus, err error) {
+func (fsm *FSM[T]) rejectQueuedEvent(
+	item *queuedEvent,
+	status AsyncEventStatus,
+	err error,
+) {
 	stopEventExpiryTimer(item)
 	if item.receipt == nil && !fsm.hasRuntimeObservers() {
 		return
@@ -129,23 +148,44 @@ func (fsm *FSM[T]) rejectQueuedEvent(item *queuedEvent, status AsyncEventStatus,
 
 func (fsm *FSM[T]) rejectedEventTrace(event Event, err error) TransitionTrace {
 	state, previousID := fsm.stateSnapshot()
-	trace := ds.NewTransitionTrace(previousID, uuid.NewString(), state, event).Start()
+	trace := ds.NewTransitionTrace(
+		previousID, uuid.NewString(), state, event,
+	).Start()
 	trace.SetFinalState(state).TransitionFail().End(err)
 
 	return trace.TrimPtr()
 }
 
-func (fsm *FSM[T]) completeQueuedEvent(item *queuedEvent, status AsyncEventStatus, trace TransitionTrace, err error, startedAt time.Time) {
+func (fsm *FSM[T]) completeQueuedEvent(
+	item *queuedEvent,
+	status AsyncEventStatus,
+	trace TransitionTrace,
+	err error,
+	startedAt time.Time,
+) {
 	stopEventExpiryTimer(item)
 	if item.receipt == nil {
 		return
 	}
 	result := AsyncEventResult{
-		ID: item.id, Event: item.event, Priority: item.priority, Status: status,
-		Trace: trace, Error: err, SubmittedAt: item.submittedAt, StartedAt: startedAt, FinishedAt: time.Now(),
+		ID:          item.id,
+		Event:       item.event,
+		Priority:    item.priority,
+		Status:      status,
+		Trace:       trace,
+		Error:       err,
+		SubmittedAt: item.submittedAt,
+		StartedAt:   startedAt,
+		FinishedAt:  time.Now(),
 	}
 	if !item.receipt.complete(result) {
 		return
 	}
-	go func() { defer func() { _ = recover() }(); item.notify <- result }()
+	go func() {
+		defer func() {
+			_ = recover()
+		}()
+
+		item.notify <- result
+	}()
 }

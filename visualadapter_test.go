@@ -41,7 +41,8 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 					current.Payload.Count++
 
 					return nil
-				}},
+				},
+			},
 		),
 	)
 	var client visualization.PushClientI = machine
@@ -181,7 +182,8 @@ func TestRegisterClientUsesPayloadMetadataAndServerPathPrefix(t *testing.T) {
 	}
 	payload := &visualizationMetadataPayload{
 		Name:    "Player One",
-		SubPath: "online"}
+		SubPath: "online",
+	}
 	machine := NewFSM("player", State("idle"), payload)
 	defer func() { _ = machine.Close() }()
 	registration, err := visualization.RegisterClient(

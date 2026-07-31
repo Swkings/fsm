@@ -18,6 +18,84 @@ func (fsm *FSM[T]) Register(server *fsmserver.Server) error {
 	return server.Register(fsm)
 }
 
+// SetTransitions validates and atomically registers transition rules.
+func (fsm *FSM[T]) SetTransitions(items ...TransitionItem[T]) *FSM[T] {
+	fsm.configLock.Lock()
+	defer fsm.notifyRuntimeObservers(nil)
+	defer fsm.configLock.Unlock()
+
+	seen := make(map[EventStateKey]struct{}, len(items))
+	for _, item := range items {
+		key := EventStateKey{Event: item.Event, FromState: item.FromState}
+		if _, exists := fsm.transitions[key]; exists {
+			panic(ErrorEventStateKeyRepeated(key))
+		}
+		if _, repeated := seen[key]; repeated {
+			panic(ErrorEventStateKeyRepeated(key))
+		}
+		seen[key] = struct{}{}
+	}
+	for _, item := range items {
+		key := EventStateKey{Event: item.Event, FromState: item.FromState}
+		fsm.transitions[key] = item.ToState
+		fsm.handlers[key] = item.Handler
+		fsm.setEventSearch(key)
+	}
+
+	return fsm
+}
+
+func (fsm *FSM[T]) setEventSearch(key EventStateKey) {
+	if _, ok := fsm.eventSearch[key.FromState]; !ok {
+		fsm.eventSearch[key.FromState] = []Event{}
+	}
+	fsm.eventSearch[key.FromState] = append(
+		fsm.eventSearch[key.FromState], key.Event,
+	)
+}
+
+// GetEventUnderState returns a copy of the events accepted by state.
+func (fsm *FSM[T]) GetEventUnderState(state State) []Event {
+	fsm.configLock.RLock()
+	defer fsm.configLock.RUnlock()
+
+	return append([]Event(nil), fsm.eventSearch[state]...)
+}
+
+func (fsm *FSM[T]) getTransition(key EventStateKey) (State, Handler[T], bool) {
+	fsm.configLock.RLock()
+	defer fsm.configLock.RUnlock()
+	state, exists := fsm.transitions[key]
+
+	return state, fsm.handlers[key], exists
+}
+
+// SetPayload replaces the FSM payload under the state lock.
+func (fsm *FSM[T]) SetPayload(payload T) *FSM[T] {
+	fsm.stateLock.Lock()
+	defer fsm.notifyRuntimeObservers(nil)
+	defer fsm.stateLock.Unlock()
+	fsm.Payload = payload
+
+	return fsm
+}
+
+// SetCurrentState directly updates state without running a transition handler.
+func (fsm *FSM[T]) SetCurrentState(state State) {
+	fsm.stateLock.Lock()
+	defer fsm.notifyRuntimeObservers(nil)
+	defer fsm.stateLock.Unlock()
+	fsm.currentState = state
+}
+
+// GetCurrentState returns the current committed state.
+func (fsm *FSM[T]) GetCurrentState() State {
+	fsm.stateLock.RLock()
+	defer fsm.stateLock.RUnlock()
+
+	return fsm.currentState
+}
+
 // Metadata returns an independent snapshot of the FSM and serialized payload.
 func (fsm *FSM[T]) Metadata() Metadata {
 	if fsm == nil {
