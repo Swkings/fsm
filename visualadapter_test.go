@@ -45,7 +45,7 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 			},
 		),
 	)
-	var client visualization.PushClientI = machine
+	var client visualization.IPushClient = machine
 	registration, err := server.Register(
 		context.Background(), client, visualization.RegistrationConfig{
 			DisplayName: "Warehouse Door",
@@ -88,7 +88,7 @@ func TestFSMImplementsPushClientDirectly(t *testing.T) {
 		snapshot.Description != machine.Describe || snapshot.DisplayName != "Warehouse Door" {
 		t.Fatalf("snapshot identity = %+v", snapshot.Descriptor)
 	}
-	if len(snapshot.Traces) != 1 || snapshot.Traces[0].Event != "open" {
+	if len(snapshot.Traces) != 1 || snapshot.Traces[0].Event != "open" || snapshot.Traces[0].OperationBy != OperationByAuto {
 		t.Fatalf("unexpected traces: %+v", snapshot.Traces)
 	}
 	entryMetadata, exitMetadata := snapshot.Traces[0].EntryMetadata, snapshot.Traces[0].ExitMetadata

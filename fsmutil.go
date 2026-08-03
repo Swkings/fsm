@@ -137,7 +137,7 @@ func (fsm *FSM[T]) Metadata() Metadata {
 	return metadata
 }
 
-func isNilPayload[T PayloadI](payload T) bool {
+func isNilPayload[T IPayload](payload T) bool {
 	value := reflect.ValueOf(payload)
 	if !value.IsValid() {
 		return true

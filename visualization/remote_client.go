@@ -17,7 +17,7 @@ func (discover ServiceDiscoveryFunc) Discover(ctx context.Context) ([]Discovered
 	return discover(ctx)
 }
 
-// HTTPServiceDiscovery 自动识别注册中心服务列表接口或单个 ClientI Server 基础地址。
+// HTTPServiceDiscovery 自动识别注册中心服务列表接口或单个 IClient Server 基础地址。
 type HTTPServiceDiscovery struct {
 	Endpoint  string
 	DirectKey string
@@ -181,7 +181,7 @@ func (wire realtimeDataWire) realtimeData() RealtimeData {
 	}
 }
 
-func NewClientHandler(client ClientI) http.Handler {
+func NewClientHandler(client IClient) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/definition", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet {

@@ -10,16 +10,16 @@ import (
 	"github.com/swkings/fsm/ds"
 )
 
-// PayloadI is the business payload contract used by an FSM.
+// IPayload is the business payload contract used by an FSM.
 // Applications normally pass a pointer so handlers can mutate the same payload.
-type PayloadI interface {
+type IPayload interface {
 	JSON() ([]byte, error)
 	DisplayName() string
 	Category() string
 }
 
 // TransitionItem describes one configured FromState --Event--> ToState rule.
-type TransitionItem[T PayloadI] struct {
+type TransitionItem[T IPayload] struct {
 	Event     Event
 	FromState State
 	ToState   State
@@ -27,7 +27,7 @@ type TransitionItem[T PayloadI] struct {
 }
 
 // NewTransitionItem creates one transition rule.
-func NewTransitionItem[T PayloadI](
+func NewTransitionItem[T IPayload](
 	event Event,
 	fromState, toState State,
 	handler Handler[T],
@@ -41,7 +41,7 @@ func NewTransitionItem[T PayloadI](
 }
 
 // FSM is a finite state machine with a mutable application payload.
-type FSM[T PayloadI] struct {
+type FSM[T IPayload] struct {
 	// instanceID 是状态机实例的稳定标识，不随转移追踪标识变化。
 	InstanceID string
 	// TtId 是最近一次成功转移的追踪标识；创建实例时会生成初始标识。
@@ -92,7 +92,7 @@ type FSM[T PayloadI] struct {
 }
 
 // NewFSM creates an FSM in initState with the supplied payload.
-func NewFSM[T PayloadI](fsmName Name, initState State, payload T) *FSM[T] {
+func NewFSM[T IPayload](fsmName Name, initState State, payload T) *FSM[T] {
 	return &FSM[T]{
 		InstanceID:        uuid.NewString(),
 		TtId:              uuid.NewString(),

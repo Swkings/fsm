@@ -74,7 +74,7 @@ Store 仅在配置了 `Driver`、JSONL、MySQL 或 Redis 字段时创建；Visua
 
 无行为的数据模型集中在 `ds`：根级 `ds` 保存 FSM 与跨模块协议公用模型，`store/ds`、`visualization/ds`、`mcp/ds` 和 `gen/ds` 保存领域模型。日常调用仍可使用 `fsm.FSMState`、`store.Record`、`visualization.Snapshot` 等便捷别名，无需为了常用操作额外导入 `ds`。
 
-仓库提供的接口统一使用 `I` 后缀，包括 `fsm.PayloadI`、`store.StoreI`、`server.RegisterableFSMI`、`visualization.ClientI` 和 `visualization.PushClientI`。旧接口名称不再提供兼容别名；从旧版本迁移时只需更新类型约束与接口声明，实现方法本身不变。
+仓库提供的接口统一使用 `I` 后缀，包括 `fsm.IPayload`、`store.IStore`、`server.IRegisterableFSM`、`visualization.IClient` 和 `visualization.IPushClient`。旧接口名称不再提供兼容别名；从旧版本迁移时只需更新类型约束与接口声明，实现方法本身不变。
 
 ## 使用模板生成代码
 
@@ -309,22 +309,22 @@ paymentRegistration, err := visualization.RegisterClient(ctx, paymentFSM)
 
 `PathPrefix` 与 Payload 的 `Category()` 使用 `/` 组合，例如上例最终目录为 `production/orders/checkout`；两者都允许为空。Payload 对应方法返回空字符串时，显示名称回退到 FSM 名称，目录仅使用非空部分。
 
-内置 `fsm.FSM` 已实现 `visualization.PushClientI`。注册时 Server 只读取一次完整 `Definition`；注册完成后，FSM 事件结束会将 `RealtimeData` 和增量 Trace 主动推送到 Client Server。取消注册 context、调用 `Unregister` 或关闭 Client Server 都会移除订阅。
+内置 `fsm.FSM` 已实现 `visualization.IPushClient`。注册时 Server 只读取一次完整 `Definition`；注册完成后，FSM 事件结束会将 `RealtimeData` 和增量 Trace 主动推送到 Client Server。取消注册 context、调用 `Unregister` 或关闭 Client Server 都会移除订阅。
 
-第三方状态机可以实现相同接口。实现 `PushClientI` 时默认采用 Push；只实现 `ClientI` 时默认采用 Pull。需要指定显示信息、目录、模式或 Pull 周期时，由客户端实现 `RegistrationConfigProviderI`：
+第三方状态机可以实现相同接口。实现 `IPushClient` 时默认采用 Push；只实现 `IClient` 时默认采用 Pull。需要指定显示信息、目录、模式或 Pull 周期时，由客户端实现 `IRegistrationConfigProvider`：
 
 ```go
-type ClientI interface {
+type IClient interface {
     VisualizationDefinition() Definition
     VisualizationSnapshot(context.Context) (RealtimeData, error)
 }
 
-type PushClientI interface {
-    ClientI
+type IPushClient interface {
+    IClient
     SubscribeVisualization(PublishFunc) func()
 }
 
-type RegistrationConfigProviderI interface {
+type IRegistrationConfigProvider interface {
     VisualizationRegistrationConfig() RegistrationConfig
 }
 ```

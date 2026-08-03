@@ -55,7 +55,7 @@ type ReplayRecordSummary struct {
 
 type replaySource struct {
 	id, name string
-	backend  store.StoreI
+	backend  store.IStore
 	primary  bool
 	owned    bool
 	lastErr  string
@@ -91,7 +91,7 @@ func validReplaySourceID(id string) bool {
 	return id != "" && !strings.ContainsAny(id, `/\\`)
 }
 
-func (hub *replayHub) register(id, name string, backend store.StoreI, primary, owned bool) error {
+func (hub *replayHub) register(id, name string, backend store.IStore, primary, owned bool) error {
 	id = strings.TrimSpace(id)
 	if !validReplaySourceID(id) {
 		return fmt.Errorf("invalid replay source id %q", id)
@@ -298,7 +298,8 @@ func storeTraceSnapshot(trace store.Trace) TraceSnapshot {
 	return TraceSnapshot{
 		TransitionID: trace.TransitionID, PreviousID: trace.PreviousID,
 		FromState: trace.FromState, Event: trace.Event, ToState: trace.ToState,
-		FinalState: trace.FinalState, Success: trace.Success, Error: trace.Error,
+		OperationBy: trace.OperationBy,
+		FinalState:  trace.FinalState, Success: trace.Success, Error: trace.Error,
 		EntryMetadata: storeMetadataSnapshot(trace.Entry), ExitMetadata: storeMetadataSnapshot(trace.Exit),
 		BeginTime: trace.BeginTime, EndTime: trace.EndTime, Duration: duration,
 	}
@@ -309,7 +310,7 @@ func storeMetadataSnapshot(metadata store.Metadata) MetadataSnapshot {
 }
 
 // RegisterReplayStore 将 FSM Store 暴露给 Replay 页面。Store 生命周期仍由调用方管理。
-func (server *Server) RegisterReplayStore(id, name string, backend store.StoreI) error {
+func (server *Server) RegisterReplayStore(id, name string, backend store.IStore) error {
 	return server.replays.register(id, name, backend, id == "primary", false)
 }
 

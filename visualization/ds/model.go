@@ -61,19 +61,20 @@ type MetadataSnapshot = commonds.WireMetadata
 
 // TraceSnapshot is the visualization representation of one transition trace.
 type TraceSnapshot struct {
-	TransitionID  string           `json:"transitionId"`
-	PreviousID    string           `json:"previousId"`
-	FromState     string           `json:"fromState"`
-	Event         string           `json:"event"`
-	ToState       string           `json:"toState"`
-	FinalState    string           `json:"finalState"`
-	Success       bool             `json:"success"`
-	Error         string           `json:"error,omitempty"`
-	EntryMetadata MetadataSnapshot `json:"entryMetadata"`
-	ExitMetadata  MetadataSnapshot `json:"exitMetadata"`
-	BeginTime     int64            `json:"beginTime"`
-	EndTime       int64            `json:"endTime"`
-	Duration      time.Duration    `json:"duration"`
+	TransitionID  string               `json:"transitionId"`
+	PreviousID    string               `json:"previousId"`
+	FromState     string               `json:"fromState"`
+	Event         string               `json:"event"`
+	ToState       string               `json:"toState"`
+	OperationBy   commonds.OperationBy `json:"operationBy"`
+	FinalState    string               `json:"finalState"`
+	Success       bool                 `json:"success"`
+	Error         string               `json:"error,omitempty"`
+	EntryMetadata MetadataSnapshot     `json:"entryMetadata"`
+	ExitMetadata  MetadataSnapshot     `json:"exitMetadata"`
+	BeginTime     int64                `json:"beginTime"`
+	EndTime       int64                `json:"endTime"`
+	Duration      time.Duration        `json:"duration"`
 }
 
 // RealtimeData is the mutable portion of a registered FSM snapshot.

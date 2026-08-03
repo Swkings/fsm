@@ -43,8 +43,8 @@ const (
 	ModePush = visualizationds.ModePush
 )
 
-// ClientI is the base contract implemented by visualization clients.
-type ClientI interface {
+// IClient is the base contract implemented by visualization clients.
+type IClient interface {
 	VisualizationDefinition() Definition
 	VisualizationSnapshot(context.Context) (RealtimeData, error)
 }
@@ -52,9 +52,9 @@ type ClientI interface {
 // PublishFunc submits realtime data and any newly completed traces.
 type PublishFunc func(RealtimeData, ...TraceSnapshot) error
 
-// PushClientI extends ClientI with realtime update subscriptions.
-type PushClientI interface {
-	ClientI
+// IPushClient extends IClient with realtime update subscriptions.
+type IPushClient interface {
+	IClient
 	SubscribeVisualization(PublishFunc) func()
 }
 

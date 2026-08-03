@@ -27,16 +27,16 @@ type DiscoveredService struct {
 	PullInterval   time.Duration `json:"-"`
 }
 
-// ServiceDiscoveryI 发现可直接拉取的单个远程状态机端点。
-type ServiceDiscoveryI interface {
+// IServiceDiscovery 发现可直接拉取的单个远程状态机端点。
+type IServiceDiscovery interface {
 	Discover(context.Context) ([]DiscoveredService, error)
 }
 
-// DiscoveredServer 描述注册中心发现的业务进程可视化 ClientI Server。
+// DiscoveredServer 描述注册中心发现的业务进程可视化 IClient Server。
 type DiscoveredServer = DiscoveredService
 
-// ServerDiscoveryI 发现业务进程可视化 ClientI Server 地址。
-type ServerDiscoveryI interface {
+// IServerDiscovery 发现业务进程可视化 IClient Server 地址。
+type IServerDiscovery interface {
 	Discover(context.Context) ([]DiscoveredServer, error)
 }
 
@@ -82,7 +82,7 @@ type discoveredRegistration struct {
 type registeredDiscovery struct {
 	server    *Server
 	config    DiscoveryConfig
-	discovery ServiceDiscoveryI
+	discovery IServiceDiscovery
 	ctx       context.Context
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -122,7 +122,7 @@ func normalizeDiscoveryConfig(config DiscoveryConfig) (DiscoveryConfig, error) {
 	return config, nil
 }
 
-func (server *Server) RegisterDiscovery(ctx context.Context, discovery ServiceDiscoveryI, config DiscoveryConfig) (*DiscoveryRegistration, error) {
+func (server *Server) RegisterDiscovery(ctx context.Context, discovery IServiceDiscovery, config DiscoveryConfig) (*DiscoveryRegistration, error) {
 	if server == nil || isNilInterface(discovery) {
 		return nil, ErrInvalidDiscovery
 	}
@@ -260,7 +260,7 @@ func registrationActive(registration *Registration) bool {
 	}
 }
 
-func safeDiscover(discovery ServiceDiscoveryI, ctx context.Context) (services []DiscoveredService, err error) {
+func safeDiscover(discovery IServiceDiscovery, ctx context.Context) (services []DiscoveredService, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("%w: panic: %v", ErrInvalidDiscovery, recovered)
@@ -395,7 +395,7 @@ func (registered *registeredDiscovery) snapshot() DiscoverySnapshot {
 	}
 }
 
-func discoveryEndpoint(discovery ServiceDiscoveryI) string {
+func discoveryEndpoint(discovery IServiceDiscovery) string {
 	switch source := discovery.(type) {
 	case *HTTPServiceDiscovery:
 		return source.Endpoint

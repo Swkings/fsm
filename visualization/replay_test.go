@@ -60,7 +60,7 @@ func TestReplayReadsFSMStoreWithoutOwningPersistence(t *testing.T) {
 		RecordedAt: time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC), Success: true,
 		Metadata:    store.Metadata{InstanceID: "instance-1", TransitionID: "transition-1", Name: "player", PreviousState: "IDLE", PreviousEvent: "RUN", CurrentState: "RUN", Payload: []byte(`{"health":100}`)},
 		Transitions: []store.Transition{{FromState: "IDLE", Event: "RUN", ToState: "RUN"}},
-		Trace:       store.Trace{TransitionID: "transition-1", FromState: "IDLE", Event: "RUN", ToState: "RUN", FinalState: "RUN", Success: true},
+		Trace:       store.Trace{TransitionID: "transition-1", FromState: "IDLE", Event: "RUN", ToState: "RUN", OperationBy: "MANUAL", FinalState: "RUN", Success: true},
 	}
 	if err = backend.Save(context.Background(), record); err != nil {
 		t.Fatalf("save record: %v", err)
@@ -75,7 +75,7 @@ func TestReplayReadsFSMStoreWithoutOwningPersistence(t *testing.T) {
 	if err != nil || len(records) != 1 {
 		t.Fatalf("list replay records: records=%+v err=%v", records, err)
 	}
-	if records[0].Trace.Event != "RUN" || records[0].Trace.FromState != "IDLE" || records[0].Trace.FinalState != "RUN" {
+	if records[0].Trace.Event != "RUN" || records[0].Trace.FromState != "IDLE" || records[0].Trace.FinalState != "RUN" || records[0].Trace.OperationBy != "MANUAL" {
 		t.Fatalf("list replay trace: %+v", records[0].Trace)
 	}
 	replay, err := hub.get(context.Background(), "primary", record.ID)

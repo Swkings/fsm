@@ -377,7 +377,7 @@ func TestTransitionTraceStringAndDuration(t *testing.T) {
 	if trace.Duration() <= 0 {
 		t.Fatalf("Duration() = %v", trace.Duration())
 	}
-	if text := trace.String(); !strings.Contains(text, "visible error") {
+	if text := trace.String(); !strings.Contains(text, "visible error") || !strings.Contains(text, `"OperationBy":"AUTO"`) {
 		t.Fatalf("String() lost error message: %s", text)
 	}
 }

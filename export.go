@@ -8,7 +8,13 @@ type (
 	Event           = ds.FSMEvent
 	EventStateKey   = ds.EventStateKey
 	Metadata        = ds.Metadata
+	OperationBy     = ds.OperationBy
 	TransitionTrace = ds.TransitionTrace
+)
+
+const (
+	OperationByAuto   = ds.OperationByAuto
+	OperationByManual = ds.OperationByManual
 )
 
 var (

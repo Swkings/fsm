@@ -16,7 +16,7 @@ import (
 )
 
 // New 根据配置创建可用 Store。没有数据库配置时默认创建 JSONL Store。
-func New(cfg config.Store) (StoreI, error) {
+func New(cfg config.Store) (IStore, error) {
 	driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
 	if driver == "" {
 		switch {
@@ -158,7 +158,7 @@ func (s *jsonlStore) List(ctx context.Context, query Query) ([]Record, error) {
 	return filter(records, query), ctx.Err()
 }
 
-func latest(ctx context.Context, backend StoreI, key string) (Record, error) {
+func latest(ctx context.Context, backend IStore, key string) (Record, error) {
 	records, err := backend.List(ctx, Query{Key: key, Limit: 1, SuccessfulOnly: true})
 	if err != nil {
 		return Record{}, err

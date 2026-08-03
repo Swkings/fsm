@@ -16,7 +16,7 @@ import (
 type registeredClient struct {
 	definition  Definition
 	config      RegistrationConfig
-	client      ClientI
+	client      IClient
 	snapshot    Snapshot
 	traces      []TraceSnapshot
 	ctx         context.Context
@@ -113,7 +113,7 @@ func NewServerWithConfig(config ServerConfig) *Server {
 // Register 注册客户端。
 // Server 在此阶段只读取一次完整 Definition，并将 config 绑定到返回的 Registration。
 // 后续 pull/push 只接收 RealtimeData，不会把注册配置写回客户端。
-func (server *Server) Register(ctx context.Context, client ClientI, config RegistrationConfig) (*Registration, error) {
+func (server *Server) Register(ctx context.Context, client IClient, config RegistrationConfig) (*Registration, error) {
 	if isNilInterface(client) {
 		return nil, ErrInvalidClient
 	}
@@ -123,7 +123,7 @@ func (server *Server) Register(ctx context.Context, client ClientI, config Regis
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	pushClient, supportsPush := client.(PushClientI)
+	pushClient, supportsPush := client.(IPushClient)
 	definition, err := clientDefinition(client)
 	if err != nil {
 		return nil, err
@@ -161,7 +161,7 @@ func (server *Server) Register(ctx context.Context, client ClientI, config Regis
 	return handle, nil
 }
 
-func clientDefinition(client ClientI) (definition Definition, err error) {
+func clientDefinition(client IClient) (definition Definition, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("%w: definition panic: %v", ErrInvalidClient, recovered)
@@ -171,7 +171,7 @@ func clientDefinition(client ClientI) (definition Definition, err error) {
 	return client.VisualizationDefinition(), nil
 }
 
-func subscribeClient(client PushClientI, publish PublishFunc) (unsubscribe func(), err error) {
+func subscribeClient(client IPushClient, publish PublishFunc) (unsubscribe func(), err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("%w: subscribe panic: %v", ErrInvalidClient, recovered)
@@ -185,7 +185,7 @@ func (server *Server) addRegistration(
 	ctx context.Context,
 	definition Definition,
 	config RegistrationConfig,
-	client ClientI,
+	client IClient,
 ) (*registeredClient, error) {
 	sourceContext, cancel := context.WithCancel(ctx)
 	registered := &registeredClient{
@@ -271,7 +271,7 @@ func (server *Server) refreshClient(id string, expected *registeredClient) error
 	return nil
 }
 
-func clientRealtimeData(client ClientI, ctx context.Context) (data RealtimeData, err error) {
+func clientRealtimeData(client IClient, ctx context.Context) (data RealtimeData, err error) {
 	if client == nil {
 		return RealtimeData{}, ErrInvalidClient
 	}

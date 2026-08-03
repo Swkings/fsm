@@ -25,7 +25,7 @@ var (
 
 type persistenceBinding struct {
 	sync.RWMutex
-	backend store.StoreI
+	backend store.IStore
 	key     string
 }
 
@@ -33,7 +33,7 @@ type persistenceBinding struct {
 // 找不到历史数据时会保存当前初始快照。key 应是业务实例的稳定标识。
 func (fsm *FSM[T]) BindStore(
 	ctx context.Context,
-	backend store.StoreI,
+	backend store.IStore,
 	key string,
 ) error {
 	if fsm == nil || backend == nil {
@@ -80,7 +80,7 @@ func (fsm *FSM[T]) UnbindStore() {
 	fsm.persistence.Unlock()
 }
 
-func (fsm *FSM[T]) bindStore(backend store.StoreI, key string) {
+func (fsm *FSM[T]) bindStore(backend store.IStore, key string) {
 	fsm.persistence.Lock()
 	fsm.persistence.backend, fsm.persistence.key = backend, key
 	fsm.persistence.Unlock()
@@ -179,6 +179,7 @@ func (fsm *FSM[T]) persistTrace(
 		FromState:    string(trace.FromState),
 		Event:        string(trace.Event),
 		ToState:      string(trace.ToState),
+		OperationBy:  trace.OperationBy,
 		FinalState:   string(trace.FinalState),
 		Success:      trace.TransitionResult,
 		Entry:        metadataToStore(trace.EntryMetadata),

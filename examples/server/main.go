@@ -22,7 +22,7 @@ func (p *doorPayload) JSON() ([]byte, error) { return json.Marshal(p) }
 func (p *doorPayload) DisplayName() string   { return "Warehouse Door" }
 func (p *doorPayload) Category() string      { return "warehouse/doors" }
 
-// externalWorker 不依赖 fsm.FSM，只需直接实现 visualization.ClientI。
+// externalWorker 不依赖 fsm.FSM，只需直接实现 visualization.IClient。
 type externalWorker struct {
 	mu       sync.RWMutex
 	state    string

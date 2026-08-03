@@ -30,17 +30,17 @@ var (
 
 var _ service.Service = (*Server)(nil)
 
-// RegisterableFSMI 是可由 Server 统一管理的 FSM 能力集合。
+// IRegisterableFSM 是可由 Server 统一管理的 FSM 能力集合。
 // *FSM[T] 已实现该接口，不要求业务方额外编写适配器。
-type RegisterableFSMI interface {
-	visualization.PushClientI
+type IRegisterableFSM interface {
+	visualization.IPushClient
 	VisualizationRegistrationConfig() visualization.RegistrationConfig
-	BindStore(context.Context, store.StoreI, string) error
+	BindStore(context.Context, store.IStore, string) error
 	UnbindStore()
 }
 
 type managedFSMRegistration struct {
-	machine       RegisterableFSMI
+	machine       IRegisterableFSM
 	visualization *visualization.Registration
 	storeBound    bool
 }
@@ -49,7 +49,7 @@ type managedFSMRegistration struct {
 // Start 与 Stop 实现 github.com/zeromicro/go-zero/core/service.Service。
 type Server struct {
 	config               config.Config
-	store                store.StoreI
+	store                store.IStore
 	visualization        *visualization.Server
 	visualizationEnabled bool
 	mcpEnabled           bool
@@ -80,7 +80,7 @@ func NewServer(cfg config.Config) (*Server, error) {
 	if mcpEnabled && fsmmcp.Endpoint(cfg.MCP.Endpoint) == "/healthz" {
 		return nil, errors.New("fsm mcp endpoint conflicts with /healthz")
 	}
-	var backend store.StoreI
+	var backend store.IStore
 	var err error
 	if storeConfigured(cfg.Store) {
 		backend, err = store.New(cfg.Store)
@@ -134,7 +134,7 @@ func MustNewServer(cfg config.Config) *Server {
 }
 
 // Register 注册一个或多个 FSM，并按配置接入 Store、可视化和 MCP 查询能力。
-func (server *Server) Register(machines ...RegisterableFSMI) error {
+func (server *Server) Register(machines ...IRegisterableFSM) error {
 	registered := make([]string, 0, len(machines))
 	for _, machine := range machines {
 		id, err := server.register(machine, "")
@@ -152,7 +152,7 @@ func (server *Server) Register(machines ...RegisterableFSMI) error {
 }
 
 // RegisterWithKey 使用调用方提供的稳定业务 key 绑定 Store，适合重启恢复。
-func (server *Server) RegisterWithKey(storeKey string, machine RegisterableFSMI) error {
+func (server *Server) RegisterWithKey(storeKey string, machine IRegisterableFSM) error {
 	if server.store == nil {
 		return ErrStoreNotConfigured
 	}
@@ -161,7 +161,7 @@ func (server *Server) RegisterWithKey(storeKey string, machine RegisterableFSMI)
 	return err
 }
 
-func (server *Server) register(machine RegisterableFSMI, storeKey string) (string, error) {
+func (server *Server) register(machine IRegisterableFSM, storeKey string) (string, error) {
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	if isNilManagedFSM(machine) {
@@ -393,7 +393,7 @@ func (server *Server) Err() error {
 }
 
 // Store 返回 Server 持有的共享持久化后端；未配置 Store 时返回 nil。
-func (server *Server) Store() store.StoreI { return server.store }
+func (server *Server) Store() store.IStore { return server.store }
 
 // VisualizationServer 返回内部 FSM 查询与可视化 Server；Visualization 与 MCP
 // 均未配置时返回 nil。
@@ -463,7 +463,7 @@ func joinRegistrationPath(prefix, child string) string {
 	return prefix + "/" + child
 }
 
-func isNilManagedFSM(machine RegisterableFSMI) bool {
+func isNilManagedFSM(machine IRegisterableFSM) bool {
 	if machine == nil {
 		return true
 	}

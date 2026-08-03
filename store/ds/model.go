@@ -15,18 +15,19 @@ type Transition = commonds.Transition
 
 // Trace is the stable persistence representation of a transition trace.
 type Trace struct {
-	TransitionID string   `json:"transitionId"`
-	PreviousID   string   `json:"previousId,omitempty"`
-	FromState    string   `json:"fromState"`
-	Event        string   `json:"event"`
-	ToState      string   `json:"toState"`
-	FinalState   string   `json:"finalState"`
-	Success      bool     `json:"success"`
-	Error        string   `json:"error,omitempty"`
-	Entry        Metadata `json:"entry"`
-	Exit         Metadata `json:"exit"`
-	BeginTime    int64    `json:"beginTime"`
-	EndTime      int64    `json:"endTime"`
+	TransitionID string               `json:"transitionId"`
+	PreviousID   string               `json:"previousId,omitempty"`
+	FromState    string               `json:"fromState"`
+	Event        string               `json:"event"`
+	ToState      string               `json:"toState"`
+	OperationBy  commonds.OperationBy `json:"operationBy"`
+	FinalState   string               `json:"finalState"`
+	Success      bool                 `json:"success"`
+	Error        string               `json:"error,omitempty"`
+	Entry        Metadata             `json:"entry"`
+	Exit         Metadata             `json:"exit"`
+	BeginTime    int64                `json:"beginTime"`
+	EndTime      int64                `json:"endTime"`
 }
 
 // Record is one durable FSM event-processing record.
@@ -42,7 +43,7 @@ type Record struct {
 	Trace       Trace        `json:"trace"`
 }
 
-// Query filters records returned by a StoreI.
+// Query filters records returned by a IStore.
 type Query struct {
 	Key            string
 	Limit          int

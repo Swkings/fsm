@@ -12,7 +12,7 @@ import (
 	"github.com/swkings/fsm/visualization"
 )
 
-// VisualizationDefinition 返回完整静态定义，使 FSM 直接实现 visualization.ClientI。
+// VisualizationDefinition 返回完整静态定义，使 FSM 直接实现 visualization.IClient。
 // Server 仅在注册时调用一次；注册后修改转移配置不会自动改变已注册的状态图。
 func (fsm *FSM[T]) VisualizationDefinition() visualization.Definition {
 	if fsm == nil {
@@ -102,7 +102,7 @@ func (fsm *FSM[T]) VisualizationSnapshot(ctx context.Context) (visualization.Rea
 	return fsm.runtimeVisualizationData(), nil
 }
 
-// SubscribeVisualization 使 FSM 直接实现 visualization.PushClientI。
+// SubscribeVisualization 使 FSM 直接实现 visualization.IPushClient。
 // 每次事件结束时直接推送最新实时数据及本次增量 trace。
 func (fsm *FSM[T]) SubscribeVisualization(publish visualization.PublishFunc) func() {
 	if fsm == nil || publish == nil {
@@ -167,6 +167,7 @@ func newVisualizationTraceSnapshot(trace TransitionTrace) visualization.TraceSna
 		FromState:     string(trace.FromState),
 		Event:         string(trace.Event),
 		ToState:       string(trace.ToState),
+		OperationBy:   trace.OperationBy,
 		FinalState:    string(trace.FinalState),
 		Success:       trace.TransitionResult,
 		Error:         errorMessage,

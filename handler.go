@@ -3,10 +3,10 @@ package fsm
 import "context"
 
 // Actor is one handler stage. Params are the values passed to ProcessEvent.
-type Actor[T PayloadI] func(*FSM[T], ...any) error
+type Actor[T IPayload] func(*FSM[T], ...any) error
 
 // Handler defines the fixed before, action, and after stages of a transition.
-type Handler[T PayloadI] struct {
+type Handler[T IPayload] struct {
 	BeforeHandler Actor[T]
 	Handler       Actor[T]
 	AfterHandler  Actor[T]

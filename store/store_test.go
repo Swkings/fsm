@@ -92,7 +92,7 @@ func TestRedisStoreLifecycle(t *testing.T) {
 	testStoreLifecycle(t, backend)
 }
 
-func testStoreLifecycle(t *testing.T, backend StoreI) {
+func testStoreLifecycle(t *testing.T, backend IStore) {
 	t.Helper()
 	suffix := fmt.Sprintf("%s-%d", strings.ToLower(t.Name()), time.Now().UnixNano())
 	record := Record{
@@ -103,7 +103,7 @@ func testStoreLifecycle(t *testing.T, backend StoreI) {
 		RecordedAt:  time.Now().UTC(),
 		Success:     true,
 		Metadata:    Metadata{CurrentState: "RUN"},
-		Trace:       Trace{FromState: "IDLE", Event: "RUN", ToState: "RUN", FinalState: "RUN", Success: true},
+		Trace:       Trace{FromState: "IDLE", Event: "RUN", ToState: "RUN", OperationBy: "AUTO", FinalState: "RUN", Success: true},
 	}
 	ctx := context.Background()
 	if err := backend.Save(ctx, record); err != nil {
@@ -118,7 +118,7 @@ func testStoreLifecycle(t *testing.T, backend StoreI) {
 		t.Fatalf("List: records=%+v err=%v", listed, err)
 	}
 	got, err := backend.Get(ctx, record.ID)
-	if err != nil || got.Metadata.CurrentState != "RUN" || got.Trace.Event != "RUN" {
+	if err != nil || got.Metadata.CurrentState != "RUN" || got.Trace.Event != "RUN" || got.Trace.OperationBy != "AUTO" {
 		t.Fatalf("Get: record=%+v err=%v", got, err)
 	}
 	if err = backend.Delete(ctx, record.ID); err != nil {

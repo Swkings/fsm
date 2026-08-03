@@ -30,8 +30,8 @@ type (
 	RemoteDirectoryView = storeds.RemoteDirectoryView
 )
 
-// StoreI is the common contract implemented by all FSM persistence backends.
-type StoreI interface {
+// IStore is the common contract implemented by all FSM persistence backends.
+type IStore interface {
 	Save(context.Context, Record) error
 	List(context.Context, Query) ([]Record, error)
 	Latest(context.Context, string) (Record, error)
