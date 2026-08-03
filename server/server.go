@@ -24,6 +24,7 @@ import (
 var (
 	ErrInvalidManagedFSM    = errors.New("invalid managed fsm")
 	ErrManagedFSMRegistered = errors.New("fsm is already registered to server")
+	ErrServerNotConfigured  = errors.New("fsm server is not configured")
 	ErrServerStopped        = errors.New("fsm server is stopped")
 	ErrStoreNotConfigured   = errors.New("fsm store is not configured")
 )
@@ -73,8 +74,7 @@ type Server struct {
 	mcpListener   net.Listener
 }
 
-// NewServer 根据 FSM 顶层配置创建统一服务，但不监听端口。
-func NewServer(cfg config.Config) (*Server, error) {
+func newServer(cfg config.Config) (*Server, error) {
 	visualizationEnabled := strings.TrimSpace(cfg.Visualization.ServerAddress) != ""
 	mcpEnabled := cfg.MCP.Enabled || strings.TrimSpace(cfg.MCP.ServerAddress) != ""
 	if mcpEnabled && fsmmcp.Endpoint(cfg.MCP.Endpoint) == "/healthz" {
@@ -309,6 +309,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	select {
 	case <-server.done:
 		server.lifecycleMu.Unlock()
+		clearGlobalServer(server)
 
 		return server.stopErr
 	default:
@@ -348,6 +349,7 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	server.stopErr = errors.Join(shutdownErrors...)
 	close(server.done)
 	server.lifecycleMu.Unlock()
+	clearGlobalServer(server)
 
 	return server.stopErr
 }

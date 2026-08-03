@@ -49,7 +49,7 @@ paymentFSM := newPaymentFSM(&PaymentPayload{/* ... */})
 if err := s.Register(orderFSM); err != nil {
     return err
 }
-if err := paymentFSM.RegisterTo(s); err != nil {
+if err := paymentFSM.Register(); err != nil {
     return err
 }
 
@@ -60,11 +60,11 @@ services.Start()
 
 配置 Store 后，默认 key 根据 Payload `Category()`、FSM 名称与 `DisplayName()` 生成。需要明确的稳定业务键进行重启恢复时，使用 `s.RegisterWithKey("orders/order-1001", orderFSM)`；未配置 Store 时调用该方法会返回 `ErrStoreNotConfigured`。Server 停止时会解除所有注册并关闭其持有的 Store；FSM 实例本身仍由业务代码负责 `Close()`。
 
-`NewServer(config)` 返回 `(*Server, error)`；`MustNewServer(config)` 在已配置的子服务初始化失败时直接 panic，适合 go-zero 应用初始化阶段。`config.Config{}` 是合法配置，只管理 FSM 生命周期，不创建 `data/fsm`、不监听可视化或 MCP 端口：
+`NewServer(config)` 返回进程内全局单例 `(*Server, error)`；后续创建调用返回同一个实例，直到该 Server 被关闭。任意模块可以通过 `server.GlobalServer()` 获取当前实例。`MustNewServer(config)` 在首次创建且已配置的子服务初始化失败时直接 panic，适合 go-zero 应用初始化阶段。`config.Config{}` 是合法配置，只管理 FSM 生命周期，不创建 `data/fsm`、不监听可视化或 MCP 端口：
 
 ```go
 s := server.MustNewServer(config.Config{})
-_ = s.Register(machine)
+_ = machine.Register() // 省略参数时自动使用全局 Server
 services.Add(s)
 ```
 
@@ -282,7 +282,10 @@ s := server.MustNewServer(config.Config{
         PathPrefix:    "production",
     },
 })
-if err := s.Register(orderFSM, paymentFSM); err != nil {
+if err := orderFSM.Register(); err != nil {
+    return err
+}
+if err := paymentFSM.Register(s); err != nil {
     return err
 }
 services.Add(s)
@@ -305,7 +308,7 @@ orderRegistration, err := visualization.RegisterClient(ctx, orderFSM)
 paymentRegistration, err := visualization.RegisterClient(ctx, paymentFSM)
 ```
 
-统一 Server 下无需直接调用 `visualization.RegisterClient`，改用 `s.Register(orderFSM, paymentFSM)` 或 `orderFSM.RegisterTo(s)`；Payload 的显示名称和目录规则保持不变。
+统一 Server 下无需直接调用 `visualization.RegisterClient`。FSM 可以使用 `machine.Register(s)` 显式指定 Server，也可以使用 `machine.Register()` 自动选择进程内全局 Server；`RegisterTo` 保留为等价别名。Payload 的显示名称和目录规则保持不变。
 
 `PathPrefix` 与 Payload 的 `Category()` 使用 `/` 组合，例如上例最终目录为 `production/orders/checkout`；两者都允许为空。Payload 对应方法返回空字符串时，显示名称回退到 FSM 名称，目录仅使用非空部分。
 

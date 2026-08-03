@@ -9,13 +9,32 @@ import (
 	fsmserver "github.com/swkings/fsm/server"
 )
 
-// Register registers the FSM with a configuration-driven server.
-func (fsm *FSM[T]) Register(server *fsmserver.Server) error {
+// Register registers the FSM with an explicitly supplied Server or with the
+// process-wide Server when called without arguments.
+func (fsm *FSM[T]) Register(servers ...*fsmserver.Server) error {
+	if len(servers) > 1 {
+		return errors.New("fsm register accepts at most one server")
+	}
+	var server *fsmserver.Server
+	if len(servers) == 0 {
+		var exists bool
+		server, exists = fsmserver.GlobalServer()
+		if !exists {
+			return fsmserver.ErrServerNotConfigured
+		}
+	} else {
+		server = servers[0]
+	}
 	if server == nil {
 		return errors.New("fsm server is nil")
 	}
 
 	return server.Register(fsm)
+}
+
+// RegisterTo is an alias for Register.
+func (fsm *FSM[T]) RegisterTo(servers ...*fsmserver.Server) error {
+	return fsm.Register(servers...)
 }
 
 // SetTransitions validates and atomically registers transition rules.
