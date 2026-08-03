@@ -173,10 +173,10 @@ func TestGeneratorsProduceStableValidHandlerCode(t *testing.T) {
 	}
 	metadataText := string(metadata)
 	if !strings.Contains(metadataText, "sIdle") ||
-		!strings.Contains(metadataText, `fsm.FSMState("Idle")`) ||
+		!strings.Contains(metadataText, `fsm.State("Idle")`) ||
 		!strings.Contains(metadataText, "var StateEnum = stateEnumStruct{") ||
 		!strings.Contains(metadataText, "eStart") ||
-		!strings.Contains(metadataText, `fsm.FSMEvent("Start")`) ||
+		!strings.Contains(metadataText, `fsm.Event("Start")`) ||
 		!strings.Contains(metadataText, "var EventEnum = eventEnumStruct{") {
 		t.Fatalf("generated metadata does not preserve YAML values:\n%s", metadata)
 	}

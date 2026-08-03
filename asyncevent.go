@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	commonasync "github.com/swkings/fsm/common/async"
 	commonds "github.com/swkings/fsm/ds"
 )
 
@@ -110,6 +111,18 @@ type asyncEventConfig struct {
 	notify    chan<- AsyncEventResult
 }
 
+type queuedEvent struct {
+	id          string
+	event       Event
+	priority    EventPriority
+	ctx         context.Context
+	notify      chan<- AsyncEventResult
+	receipt     *AsyncEventReceipt
+	submittedAt time.Time
+	expiresAt   time.Time
+	expiryTimer *time.Timer
+}
+
 // AsyncEventOption configures one asynchronous submission.
 type AsyncEventOption func(*asyncEventConfig) error
 
@@ -201,55 +214,60 @@ func (fsm *FSM[T]) SubmitEvent(event Event, options ...AsyncEventOption) (*Async
 	} else if config.ttl > 0 {
 		item.expiresAt = submittedAt.Add(config.ttl)
 	}
-	if err := fsm.eventQueue.enqueue(item, func() {
-		if fsm.eventQueue.remove(item) {
-			fsm.rejectQueuedEvent(item, AsyncEventExpired, context.DeadlineExceeded)
+	if !item.expiresAt.IsZero() {
+		item.expiryTimer = time.AfterFunc(time.Until(item.expiresAt), func() {
+			if fsm.eventQueue.Remove(item) {
+				fsm.rejectQueuedEvent(item, AsyncEventExpired, context.DeadlineExceeded)
 
-			return
+				return
+			}
+			fsm.eventQueue.Signal()
+		})
+	}
+	if err := fsm.eventQueue.Enqueue(item, commonasync.Priority(item.priority)); err != nil {
+		stopEventExpiryTimer(item)
+		if errors.Is(err, commonasync.ErrQueueClosed) {
+			return nil, ErrorEventQueueClosed
 		}
-		fsm.eventQueue.signal()
-	}); err != nil {
+
 		return nil, err
 	}
-	fsm.eventQueue.startOnce.Do(func() { go fsm.runEventQueue() })
+	fsm.eventQueue.Start(fsm.runEventQueue)
 	if item.ctx != nil {
 		go func() {
 			select {
 			case <-item.ctx.Done():
-				if fsm.eventQueue.remove(item) {
+				if fsm.eventQueue.Remove(item) {
 					fsm.rejectQueuedEvent(item, AsyncEventCanceled, item.ctx.Err())
 
 					return
 				}
-				fsm.eventQueue.signal()
+				fsm.eventQueue.Signal()
 			case <-item.receipt.Done():
 			}
 		}()
 	}
-	fsm.eventQueue.signal()
+	fsm.eventQueue.Signal()
 
 	return item.receipt, nil
 }
 
 // PendingEventCount returns the number of queued high- and low-priority events.
 func (fsm *FSM[T]) PendingEventCount() (high, low int) {
-	fsm.eventQueue.mu.Lock()
-	defer fsm.eventQueue.mu.Unlock()
-
-	return len(fsm.eventQueue.high), len(fsm.eventQueue.low)
+	return fsm.eventQueue.Pending()
 }
 
 // Close cancels queued tracked events and waits for the asynchronous worker.
 func (fsm *FSM[T]) Close() error {
-	pending, alreadyClosed := fsm.eventQueue.close()
+	pending, alreadyClosed := fsm.eventQueue.Close()
 	if !alreadyClosed {
 		for _, item := range pending {
 			fsm.rejectQueuedEvent(item, AsyncEventCanceled, ErrorEventQueueClosed)
 		}
-		fsm.eventQueue.startOnce.Do(func() { go fsm.runEventQueue() })
-		fsm.eventQueue.signal()
+		fsm.eventQueue.Start(fsm.runEventQueue)
+		fsm.eventQueue.Signal()
 	}
-	<-fsm.eventQueue.done
+	<-fsm.eventQueue.Done()
 
 	return nil
 }

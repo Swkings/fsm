@@ -10,17 +10,16 @@ import (
 )
 
 func (fsm *FSM[T]) runEventQueue() {
-	defer close(fsm.eventQueue.done)
 	for {
-		if err := fsm.eventQueue.ctx.Err(); err != nil {
+		if err := fsm.eventQueue.Context().Err(); err != nil {
 			return
 		}
-		item := fsm.eventQueue.dequeue()
-		if item == nil {
+		item, ok := fsm.eventQueue.Dequeue()
+		if !ok {
 			select {
-			case <-fsm.eventQueue.wake:
+			case <-fsm.eventQueue.Wake():
 				continue
-			case <-fsm.eventQueue.ctx.Done():
+			case <-fsm.eventQueue.Context().Done():
 				return
 			}
 		}
@@ -29,8 +28,8 @@ func (fsm *FSM[T]) runEventQueue() {
 
 			continue
 		}
-		if item.priority == EventPriorityLow && fsm.eventQueue.hasHighPriorityEvent() {
-			if !fsm.eventQueue.requeueFront(item) {
+		if item.priority == EventPriorityLow && fsm.eventQueue.HasPriority(EventPriorityHigh) {
+			if !fsm.eventQueue.RequeueFront(item, item.priority) {
 				fsm.rejectQueuedEvent(
 					item, AsyncEventCanceled, ErrorEventQueueClosed,
 				)
@@ -39,7 +38,7 @@ func (fsm *FSM[T]) runEventQueue() {
 			continue
 		}
 		if !fsm.tryAcquireQueuedEvent() {
-			if !fsm.eventQueue.requeueFront(item) {
+			if !fsm.eventQueue.RequeueFront(item, item.priority) {
 				fsm.rejectQueuedEvent(
 					item, AsyncEventCanceled, ErrorEventQueueClosed,
 				)
@@ -53,7 +52,7 @@ func (fsm *FSM[T]) runEventQueue() {
 		stopEventExpiryTimer(item)
 		startedAt := time.Now()
 		executionContext, cancel := eventExecutionContext(
-			item.ctx, fsm.eventQueue.ctx,
+			item.ctx, fsm.eventQueue.Context(),
 		)
 		trace, err := fsm.processEventLocked(executionContext, item.event)
 		cancel()
@@ -83,8 +82,8 @@ func (fsm *FSM[T]) tryAcquireQueuedEvent() bool {
 
 func (fsm *FSM[T]) waitForQueueSchedule() {
 	select {
-	case <-fsm.eventQueue.wake:
-	case <-fsm.eventQueue.ctx.Done():
+	case <-fsm.eventQueue.Wake():
+	case <-fsm.eventQueue.Context().Done():
 	}
 }
 

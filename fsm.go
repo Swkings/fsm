@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/google/uuid"
+	commonasync "github.com/swkings/fsm/common/async"
 	"github.com/swkings/fsm/ds"
 )
 
@@ -79,7 +80,7 @@ type FSM[T PayloadI] struct {
 	// directEventPending 让异步 worker 为已经到达的直接 ProcessEvent 调用让行。
 	directEventPending atomic.Int64
 	// eventQueue 保存并调度异步提交的高、低优先级事件。
-	eventQueue *eventQueue
+	eventQueue *commonasync.Queue[*queuedEvent]
 	// configLock 统一保护 transitions、handlers 和 eventSearch，确保转移配置一致。
 	configLock sync.RWMutex
 	// runtimeObserverLock 保护可视化 Server 注册的运行时观察器。
@@ -104,7 +105,7 @@ func NewFSM[T PayloadI](fsmName Name, initState State, payload T) *FSM[T] {
 		transitions:       make(map[EventStateKey]State),
 		handlers:          make(map[EventStateKey]Handler[T]),
 		eventSearch:       make(map[State][]Event),
-		eventQueue:        newEventQueue(),
+		eventQueue:        commonasync.NewQueue[*queuedEvent](),
 		runtimeObservers:  make(map[string]func(*TransitionTrace)),
 		Payload:           payload,
 	}
@@ -236,6 +237,6 @@ func (fsm *FSM[T]) processEventLockedCore(
 func (fsm *FSM[T]) releaseEventExecution() {
 	fsm.eventLock.Unlock()
 	if fsm.eventQueue != nil {
-		fsm.eventQueue.signal()
+		fsm.eventQueue.Signal()
 	}
 }

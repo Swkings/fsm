@@ -1,13 +1,17 @@
 package ds
 
-import "time"
+import (
+	"time"
+
+	commonasync "github.com/swkings/fsm/common/async"
+)
 
 // EventPriority controls asynchronous queue scheduling.
-type EventPriority uint8
+type EventPriority = commonasync.Priority
 
 const (
-	EventPriorityLow EventPriority = iota
-	EventPriorityHigh
+	EventPriorityLow  = commonasync.PriorityLow
+	EventPriorityHigh = commonasync.PriorityHigh
 )
 
 // AsyncEventStatus is the terminal state of an asynchronous event.
