@@ -6,6 +6,16 @@ import (
 	"time"
 )
 
+// OperationBy identifies how a state transition was initiated.
+type OperationBy string
+
+const (
+	// OperationByAuto marks a transition initiated by normal event processing.
+	OperationByAuto OperationBy = "AUTO"
+	// OperationByManual marks a state change initiated by ForceTransition.
+	OperationByManual OperationBy = "MANUAL"
+)
+
 // TransitionTrace records the complete result of one event-processing attempt.
 type TransitionTrace struct {
 	TtId             string
@@ -13,6 +23,7 @@ type TransitionTrace struct {
 	FromState        FSMState
 	Event            FSMEvent
 	ToState          FSMState
+	OperationBy      OperationBy
 	TransitionResult bool
 	FinalState       FSMState
 	Error            error
@@ -32,10 +43,11 @@ func NewTransitionTrace(
 	event FSMEvent,
 ) *TransitionTrace {
 	return &TransitionTrace{
-		TtId:      id,
-		PrevTtId:  prevID,
-		FromState: fromState,
-		Event:     event,
+		TtId:        id,
+		PrevTtId:    prevID,
+		FromState:   fromState,
+		Event:       event,
+		OperationBy: OperationByAuto,
 	}
 }
 
@@ -74,6 +86,13 @@ func (trace *TransitionTrace) ReleaseControl() *TransitionTrace { return trace }
 // SetToState records the configured target state.
 func (trace *TransitionTrace) SetToState(state FSMState) *TransitionTrace {
 	trace.ToState = state
+
+	return trace
+}
+
+// SetOperationBy records how the transition was initiated.
+func (trace *TransitionTrace) SetOperationBy(operationBy OperationBy) *TransitionTrace {
+	trace.OperationBy = operationBy
 
 	return trace
 }
@@ -129,24 +148,26 @@ func (trace *TransitionTrace) String() string {
 		errorMessage = trace.Error.Error()
 	}
 	view := struct {
-		TtId             string   `json:"TtId"`
-		PrevTtId         string   `json:"PrevTtId"`
-		FromState        FSMState `json:"FromState"`
-		Event            FSMEvent `json:"Event"`
-		ToState          FSMState `json:"ToState"`
-		TransitionResult bool     `json:"TransitionResult"`
-		FinalState       FSMState `json:"FinalState"`
-		Error            string   `json:"Error,omitempty"`
-		EntryMetadata    Metadata `json:"EntryMetadata"`
-		ExitMetadata     Metadata `json:"ExitMetadata"`
-		BeginTime        int64    `json:"BeginTime"`
-		EndTime          int64    `json:"EndTime"`
+		TtId             string      `json:"TtId"`
+		PrevTtId         string      `json:"PrevTtId"`
+		FromState        FSMState    `json:"FromState"`
+		Event            FSMEvent    `json:"Event"`
+		ToState          FSMState    `json:"ToState"`
+		OperationBy      OperationBy `json:"OperationBy"`
+		TransitionResult bool        `json:"TransitionResult"`
+		FinalState       FSMState    `json:"FinalState"`
+		Error            string      `json:"Error,omitempty"`
+		EntryMetadata    Metadata    `json:"EntryMetadata"`
+		ExitMetadata     Metadata    `json:"ExitMetadata"`
+		BeginTime        int64       `json:"BeginTime"`
+		EndTime          int64       `json:"EndTime"`
 	}{
 		TtId:             trace.TtId,
 		PrevTtId:         trace.PrevTtId,
 		FromState:        trace.FromState,
 		Event:            trace.Event,
 		ToState:          trace.ToState,
+		OperationBy:      trace.OperationBy,
 		TransitionResult: trace.TransitionResult,
 		FinalState:       trace.FinalState,
 		Error:            errorMessage,
